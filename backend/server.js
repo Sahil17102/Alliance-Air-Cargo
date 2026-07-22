@@ -137,15 +137,16 @@ async function initializeDatabase() {
     await connectDatabase()
   } catch (error) {
     const currentHost = (() => { try { return new URL(databaseUrl).hostname } catch { return '' } })()
-    const canUseExternalFallback = error.code === 'ENOTFOUND' && currentHost && currentHost !== externalDatabaseHost && externalDatabaseHost
-    if (canUseExternalFallback) {
+    const internalRenderHost = currentHost.endsWith('.render.com') ? currentHost.split('.')[0] : ''
+    const fallbackHosts = [...new Set([internalRenderHost, externalDatabaseHost].filter(host => host && host !== currentHost))]
+    for (const fallbackHost of fallbackHosts) {
       try {
         const fallbackUrl = new URL(databaseUrl)
-        fallbackUrl.hostname = externalDatabaseHost
+        fallbackUrl.hostname = fallbackHost
         await pool.end().catch(() => {})
         pool = createPool(fallbackUrl.toString())
         await connectDatabase()
-        console.log('PostgreSQL connected through the Render external hostname fallback')
+        console.log(`PostgreSQL connected through Render hostname fallback: ${fallbackHost}`)
         return
       } catch (fallbackError) {
         error = fallbackError
@@ -457,6 +458,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   let valid = user && ((password && password === user.password) || (otp && otp === user.otp))
 
   if (!valid && pool) {
+    if (databaseStatus !== 'connected') throw Object.assign(new Error('Account database is temporarily unavailable. Please retry shortly.'), { status: 503 })
     if (requestedRole === 'employee') {
       const result = await pool.query('SELECT owner_email, data, password_hash FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
       if (result.rowCount) {
@@ -478,7 +480,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   if (requestedRole && requestedRole !== user.role) return response.status(403).json({ message: 'Account role does not match this portal' })
 
   const safeUser = { ...publicAccount(user), email }
-  if (pool && user.role === 'agent') await ensureWallet(pool, email, safeUser)
+  if (pool && databaseStatus === 'connected' && user.role === 'agent') await ensureWallet(pool, email, safeUser)
   issueSession(response, safeUser)
   response.json({ user: safeUser })
 }))
