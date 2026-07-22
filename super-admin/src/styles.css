@@ -19,6 +19,10 @@ button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
 .font-display { font-family: "Poppins", sans-serif; }
 .card { border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; box-shadow: 0 8px 28px rgba(18,53,91,.052); }
 .field { width: 100%; border: 1px solid #dbe3ec; border-radius: .7rem; background: #fff; padding: .7rem .85rem; color: #19324d; font-size: .8rem; outline: none; transition: border-color .2s, box-shadow .2s; }
+.search-field { padding-left: 2.65rem !important; }
+.search-field-shortcut { padding-right: 3.5rem !important; }
+.field.pl-9 { padding-left: 2.65rem !important; }
+.field.pl-11 { padding-left: 3rem !important; }
 .field:focus { border-color: #0f62fe; box-shadow: 0 0 0 3px rgba(15,98,254,.1); }
 .label { display: block; font-size: .68rem; line-height: 1rem; font-weight: 700; color: #12355b; }
 .btn-primary { display:inline-flex;align-items:center;justify-content:center;gap:.45rem;border:0;border-radius:.7rem;background:#0f62fe;padding:.72rem 1rem;color:#fff;font-size:.75rem;font-weight:700;cursor:pointer;transition:.2s; }

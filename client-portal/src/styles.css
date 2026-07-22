@@ -20,6 +20,7 @@ button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
 .auth-pattern { background-image: radial-gradient(circle at 20% 20%, rgba(255,255,255,.13) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 60%, rgba(244,180,0,.25) 0 1px, transparent 1.5px); background-size: 32px 32px, 42px 42px; }
 .shadow-card { box-shadow: 0 15px 42px rgba(18,53,91,.09); }
 .field { width: 100%; border: 1px solid #dbe3ec; border-radius: .75rem; background: #fff; padding: .8rem .9rem; font-size: .875rem; outline: none; transition: border-color .2s, box-shadow .2s; }
+.search-field { padding-left: 2.75rem !important; }
 .field:focus { border-color: #0f62fe; box-shadow: 0 0 0 3px rgba(15,98,254,.1); }
 .field-label { display: block; margin-bottom: .45rem; font-size: .7rem; line-height: 1rem; font-weight: 700; color: #12355b; }
 .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: 0; border-radius: .75rem; background: #0f62fe; padding: .85rem 1.15rem; color: #fff; font-size: .875rem; font-weight: 700; cursor: pointer; transition: background .2s, transform .2s; }
