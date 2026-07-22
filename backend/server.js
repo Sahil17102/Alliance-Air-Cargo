@@ -30,6 +30,13 @@ const createPool = connectionString => new Pool({
   idleTimeoutMillis: 30000,
   max: 10,
 })
+const connectionHost = connectionString => {
+  try {
+    return new URL(connectionString || '').hostname
+  } catch {
+    return ''
+  }
+}
 
 let pool = databaseUrl ? createPool(databaseUrl) : null
 
@@ -136,7 +143,7 @@ async function initializeDatabase() {
   try {
     await connectDatabase()
   } catch (error) {
-    const currentHost = (() => { try { return new URL(databaseUrl).hostname } catch { return '' } })()
+    const currentHost = connectionHost(databaseUrl)
     const internalRenderHost = currentHost.endsWith('.render.com') ? currentHost.split('.')[0] : ''
     const fallbackHosts = [...new Set([internalRenderHost, externalDatabaseHost].filter(host => host && host !== currentHost))]
     for (const fallbackHost of fallbackHosts) {
@@ -151,6 +158,11 @@ async function initializeDatabase() {
       } catch (fallbackError) {
         error = fallbackError
       }
+    }
+    const failedHost = connectionHost(pool?.options?.connectionString)
+    if (databaseUrl && failedHost && failedHost !== currentHost) {
+      await pool.end().catch(() => {})
+      pool = createPool(databaseUrl)
     }
     databaseStatus = 'unavailable'
     databaseErrorCode = error.code || 'CONNECTION_FAILED'
