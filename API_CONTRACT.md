@@ -25,3 +25,5 @@ The backend implements these endpoints:
 All authenticated requests use `credentials: include`. The backend must allow the exact frontend origins, return `Access-Control-Allow-Credentials: true`, use secure cookies with `SameSite=None`, validate roles server-side and never trust a role sent by a browser.
 
 The browser keeps local storage as a temporary display fallback when the API is unavailable. Production wallet balances, wallet transactions and booking deductions are always enforced and stored atomically in PostgreSQL by the backend.
+
+Fare, charge and commodity records are maintained from the Super Admin console. Active commodity surcharges are read from the shared `admin_state` store during server-side freight calculation, so client booking totals update after an administrator saves a commodity change.

@@ -228,8 +228,25 @@ async function loadChargeControls(db = pool) {
   return controls
 }
 
+async function loadCommodityProfile(commodityName, db = pool) {
+  let commodities = Array.isArray(memoryAdminState.commodities) ? memoryAdminState.commodities : []
+  if (db && databaseStatus === 'connected') {
+    const result = await db.query(`SELECT value FROM admin_state WHERE key = 'commodities' LIMIT 1`)
+    if (Array.isArray(result.rows[0]?.value)) commodities = result.rows[0].value
+  }
+  const requested = String(commodityName || '').trim().toLowerCase()
+  if (!requested) return null
+  const profile = commodities.find(item => {
+    const name = String(item?.name || '').trim().toLowerCase()
+    const code = String(item?.id || '').trim().toLowerCase()
+    return (name === requested || code === requested) && String(item?.status || 'Active').toLowerCase() === 'active'
+  })
+  return profile ? cleanObject(profile) : null
+}
+
 async function calculateFreightDetails(data, db = pool) {
   const controls = await loadChargeControls(db)
+  const commodityProfile = await loadCommodityProfile(data.commodity, db)
   const pieces = Math.max(1, numberOr(data.pieces, 1))
   const actualWeight = Math.max(0, numberOr(data.actualWeight || data.weight, 0))
   const length = Math.max(0, numberOr(data.length, 0))
@@ -246,7 +263,7 @@ async function calculateFreightDetails(data, db = pool) {
     { key: 'baseFreight', label: 'Base freight', detail: `₹${numberOr(controls.baseRatePerKg, 45).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.baseRatePerKg, 45) * chargeableWeight },
     { key: 'sectorSurcharge', label: 'Sector surcharge', amount: numberOr(controls.sectorSurcharge, 0) },
     { key: 'flightSurcharge', label: 'Flight surcharge', amount: numberOr(controls.flightSurcharge, 0) },
-    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, amount: numberOr(controls.commoditySurcharge, 0) },
+    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, detail: commodityProfile ? 'Commodity Management rate' : 'Default charge profile', amount: numberOr(commodityProfile?.surcharge, controls.commoditySurcharge) },
     { key: 'originStationCharge', label: `${String(data.origin || 'Origin')} station charges`, amount: numberOr(controls.originStationCharge, 0) },
     { key: 'xrayCharges', label: 'X-ray screening charges', detail: `₹${numberOr(controls.xrayRatePerKg, 1).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.xrayRatePerKg, 1) * chargeableWeight },
     { key: 'destinationStationCharge', label: `${String(data.destination || 'Destination')} station charges`, amount: numberOr(controls.destinationStationCharge, 0) },
@@ -260,6 +277,7 @@ async function calculateFreightDetails(data, db = pool) {
     charges,
     total: money(charges.reduce((sum, row) => sum + row.amount, 0)),
     controls,
+    commodityProfile,
     pricingSource: 'super-admin',
     flights: flightOptionsFor(String(data.origin || 'DEL'), String(data.destination || 'DXB'), data.bookingDate),
   }
