@@ -104,7 +104,7 @@ async function initializeDatabase() {
     await connectDatabase()
   } catch (error) {
     const currentHost = (() => { try { return new URL(databaseUrl).hostname } catch { return '' } })()
-    const canUseExternalFallback = error.code === 'ENOTFOUND' && currentHost && !currentHost.includes('.') && externalDatabaseHost
+    const canUseExternalFallback = error.code === 'ENOTFOUND' && currentHost && currentHost !== externalDatabaseHost && externalDatabaseHost
     if (canUseExternalFallback) {
       try {
         const fallbackUrl = new URL(databaseUrl)
