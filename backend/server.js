@@ -381,6 +381,11 @@ app.get('/api/agents/lookup/:accountNumber', authenticate, asyncRoute(async (req
 
 app.post('/api/bookings', authenticate, asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
+  const selectedFlight = cleanObject(data.selectedFlight)
+  const pickupDate = String(data.pickup || '')
+  const flightDate = String(selectedFlight.date || data.bookingDate || '')
+  if (!pickupDate || !flightDate) return response.status(400).json({ message: 'Pickup date and selected flight date are required' })
+  if (pickupDate > flightDate) return response.status(400).json({ message: 'Pickup date cannot be after the selected flight date' })
   const awb = String(data.awb || `AAC-${Date.now().toString().slice(-8)}`)
   const record = { ...data, awb, status: data.status || 'Booked', milestone: data.milestone || 'Booking confirmed', progress: Number(data.progress || 15) }
   await requireDatabase().query(
