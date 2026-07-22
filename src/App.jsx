@@ -169,7 +169,7 @@ function Partners() {
     { name: 'Air India', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Air_India_2023.svg' },
     { name: 'Emirates SkyCargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Emirates_SkyCargo_Logo.svg', compact: true },
     { name: 'Qatar Airways Cargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Qatar_Airways_logo.svg' },
-    { name: 'SpiceXpress', logo: 'https://www.spicexpress.com/assets/logo.png' },
+    { name: 'SpiceXpress', logo: '/images/partners/spicexpress.png', onDark: true },
     { name: 'Lufthansa Cargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Lufthansa_Cargo_Logo_2018.svg' },
   ]
   return (
@@ -188,7 +188,7 @@ function Partners() {
                 decoding="async"
                 referrerPolicy="no-referrer"
                 onError={event => { event.currentTarget.style.display = 'none' }}
-                className={`${brand.compact ? 'max-h-9 max-w-[54px]' : 'max-h-8 max-w-[132px] sm:max-w-[145px]'} w-auto object-contain`}
+                className={`${brand.onDark ? 'h-9 w-[138px] rounded-md bg-[#d71920] px-4 py-2' : brand.compact ? 'max-h-9 max-w-[54px]' : 'max-h-8 max-w-[132px] sm:max-w-[145px]'} object-contain`}
               />
               <figcaption className="mt-2 whitespace-nowrap text-[9px] font-bold uppercase tracking-[.08em] text-slate-500">{brand.name}</figcaption>
             </figure>
