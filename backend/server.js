@@ -13,12 +13,14 @@ const app = express()
 const port = Number(process.env.PORT || 10000)
 const production = process.env.NODE_ENV === 'production'
 const jwtSecret = process.env.JWT_ACCESS_SECRET || crypto.randomBytes(48).toString('hex')
-const databaseUrl = process.env.DATABASE_URL
-const allowedOrigins = (process.env.CORS_ORIGINS || [
+const databaseUrl = process.env.DATABASE_URL?.trim().replace(/^['"]|['"]$/g, '')
+const defaultOrigins = [
   'https://alliance-air-cargo-1landing-page.onrender.com',
   'https://alliance-air-cargo-1-client-page.onrender.com',
   'https://alliance-air-cargosuperadmin.onrender.com',
-].join(',')).split(',').map(value => value.trim().replace(/\/$/, '')).filter(Boolean)
+]
+const configuredOrigins = (process.env.CORS_ORIGINS || '').split(',')
+const allowedOrigins = [...new Set([...defaultOrigins, ...configuredOrigins].map(value => value.trim().replace(/\/$/, '')).filter(Boolean))]
 
 const pool = databaseUrl ? new Pool({
   connectionString: databaseUrl,
@@ -29,6 +31,7 @@ const pool = databaseUrl ? new Pool({
 }) : null
 
 let databaseStatus = pool ? 'connecting' : 'not-configured'
+let databaseErrorCode = null
 
 const corsOptions = {
   credentials: true,
@@ -88,9 +91,11 @@ async function initializeDatabase() {
       );
     `)
     databaseStatus = 'connected'
+    databaseErrorCode = null
     console.log('PostgreSQL schema is ready')
   } catch (error) {
     databaseStatus = 'unavailable'
+    databaseErrorCode = error.code || 'CONNECTION_FAILED'
     console.error('PostgreSQL initialization failed:', error.message)
   }
 }
@@ -142,11 +147,13 @@ app.get(['/health', '/api/health'], asyncRoute(async (_request, response) => {
     try {
       await pool.query('SELECT 1')
       databaseStatus = 'connected'
-    } catch {
+      databaseErrorCode = null
+    } catch (error) {
       databaseStatus = 'unavailable'
+      databaseErrorCode = error.code || 'CONNECTION_FAILED'
     }
   }
-  response.json({ status: 'ok', database: databaseStatus, timestamp: new Date().toISOString() })
+  response.json({ status: 'ok', database: databaseStatus, databaseErrorCode, timestamp: new Date().toISOString() })
 }))
 
 app.post('/api/auth/login', asyncRoute(async (request, response) => {
