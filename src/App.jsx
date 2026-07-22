@@ -164,13 +164,35 @@ function Hero() {
 }
 
 function Partners() {
-  const brands = ['IndiGo CarGo', 'Air India', 'Emirates SkyCargo', 'Qatar Airways Cargo', 'SpiceXpress', 'Lufthansa Cargo']
+  const brands = [
+    { name: 'IndiGo CarGo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/IndiGo_Airlines_logo.svg' },
+    { name: 'Air India', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Air_India_2023.svg' },
+    { name: 'Emirates SkyCargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Emirates_SkyCargo_Logo.svg', compact: true },
+    { name: 'Qatar Airways Cargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Qatar_Airways_logo.svg' },
+    { name: 'SpiceXpress', logo: 'https://www.spicexpress.com/assets/logo.png' },
+    { name: 'Lufthansa Cargo', logo: 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Lufthansa_Cargo_Logo_2018.svg' },
+  ]
   return (
-    <section aria-label="Airline partners" className="overflow-hidden border-b border-slate-200 bg-white py-7">
-      <div className="container-site mb-5 text-center text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Preferred capacity across leading airline partners</div>
+    <section aria-label="Airline partners" className="overflow-hidden border-b border-slate-200 bg-white py-8">
+      <div className="container-site mb-6 text-center text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Preferred capacity across leading airline partners</div>
       <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
-        <div className="ticker flex w-max items-center">
-          {[...brands, ...brands].map((b, i) => <span key={`${b}-${i}`} className="mx-5 whitespace-nowrap font-display text-sm font-semibold text-slate-400 grayscale sm:mx-9 sm:text-base">{b}</span>)}
+        <div className="ticker flex w-max items-stretch" role="list">
+          {[...brands, ...brands].map((brand, i) => (
+            <figure key={`${brand.name}-${i}`} role="listitem" aria-hidden={i >= brands.length ? 'true' : undefined} className="mx-2 flex h-[76px] w-[168px] shrink-0 flex-col items-center justify-center rounded-xl border border-slate-100 bg-white px-5 shadow-[0_5px_18px_rgba(18,53,91,.05)] sm:mx-3 sm:h-[82px] sm:w-[190px]">
+              <img
+                src={brand.logo}
+                alt={`${brand.name} logo`}
+                width="150"
+                height="42"
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                onError={event => { event.currentTarget.style.display = 'none' }}
+                className={`${brand.compact ? 'max-h-9 max-w-[54px]' : 'max-h-8 max-w-[132px] sm:max-w-[145px]'} w-auto object-contain`}
+              />
+              <figcaption className="mt-2 whitespace-nowrap text-[9px] font-bold uppercase tracking-[.08em] text-slate-500">{brand.name}</figcaption>
+            </figure>
+          ))}
         </div>
       </div>
     </section>
