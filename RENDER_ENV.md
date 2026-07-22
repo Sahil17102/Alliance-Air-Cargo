@@ -22,6 +22,7 @@ PORT=10000
 BACKEND_URL=https://alliance-air-cargo.onrender.com
 DATABASE_URL=<use-the-rotated-postgresql-url-from-render>
 DATABASE_SSL=true
+DATABASE_EXTERNAL_HOST=dpg-d9g8210k1i2s73bctq6g-a.ohio-postgres.render.com
 CORS_ORIGINS=https://alliance-air-cargo-1landing-page.onrender.com,https://alliance-air-cargo-1-client-page.onrender.com,https://alliance-air-cargosuperadmin.onrender.com
 LANDING_URL=https://alliance-air-cargo-1landing-page.onrender.com
 CLIENT_URL=https://alliance-air-cargo-1-client-page.onrender.com

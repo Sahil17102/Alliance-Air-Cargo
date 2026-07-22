@@ -14,6 +14,7 @@ const port = Number(process.env.PORT || 10000)
 const production = process.env.NODE_ENV === 'production'
 const jwtSecret = process.env.JWT_ACCESS_SECRET || crypto.randomBytes(48).toString('hex')
 const databaseUrl = process.env.DATABASE_URL?.trim().replace(/^['"]|['"]$/g, '')
+const externalDatabaseHost = process.env.DATABASE_EXTERNAL_HOST || 'dpg-d9g8210k1i2s73bctq6g-a.ohio-postgres.render.com'
 const defaultOrigins = [
   'https://alliance-air-cargo-1landing-page.onrender.com',
   'https://alliance-air-cargo-1-client-page.onrender.com',
@@ -22,13 +23,15 @@ const defaultOrigins = [
 const configuredOrigins = (process.env.CORS_ORIGINS || '').split(',')
 const allowedOrigins = [...new Set([...defaultOrigins, ...configuredOrigins].map(value => value.trim().replace(/\/$/, '')).filter(Boolean))]
 
-const pool = databaseUrl ? new Pool({
-  connectionString: databaseUrl,
+const createPool = connectionString => new Pool({
+  connectionString,
   ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
   connectionTimeoutMillis: 7000,
   idleTimeoutMillis: 30000,
   max: 10,
-}) : null
+})
+
+let pool = databaseUrl ? createPool(databaseUrl) : null
 
 let databaseStatus = pool ? 'connecting' : 'not-configured'
 let databaseErrorCode = null
@@ -60,10 +63,7 @@ const publicAccount = account => {
   return safe
 }
 
-async function initializeDatabase() {
-  if (!pool) return
-  try {
-    await pool.query(`
+const schemaSql = `
       CREATE TABLE IF NOT EXISTS quote_requests (
         id TEXT PRIMARY KEY,
         data JSONB NOT NULL,
@@ -89,11 +89,35 @@ async function initializeDatabase() {
         value JSONB NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-    `)
-    databaseStatus = 'connected'
-    databaseErrorCode = null
-    console.log('PostgreSQL schema is ready')
+    `
+
+async function connectDatabase() {
+  await pool.query(schemaSql)
+  databaseStatus = 'connected'
+  databaseErrorCode = null
+  console.log('PostgreSQL schema is ready')
+}
+
+async function initializeDatabase() {
+  if (!pool) return
+  try {
+    await connectDatabase()
   } catch (error) {
+    const currentHost = (() => { try { return new URL(databaseUrl).hostname } catch { return '' } })()
+    const canUseExternalFallback = error.code === 'ENOTFOUND' && currentHost && !currentHost.includes('.') && externalDatabaseHost
+    if (canUseExternalFallback) {
+      try {
+        const fallbackUrl = new URL(databaseUrl)
+        fallbackUrl.hostname = externalDatabaseHost
+        await pool.end().catch(() => {})
+        pool = createPool(fallbackUrl.toString())
+        await connectDatabase()
+        console.log('PostgreSQL connected through the Render external hostname fallback')
+        return
+      } catch (fallbackError) {
+        error = fallbackError
+      }
+    }
     databaseStatus = 'unavailable'
     databaseErrorCode = error.code || 'CONNECTION_FAILED'
     console.error('PostgreSQL initialization failed:', error.message)
