@@ -90,6 +90,23 @@ function Logo({ compact = false, light = false }) {
   </a>
 }
 
+function AirCargoVisual() {
+  return <div className="air-cargo-visual" aria-hidden="true">
+    <div className="air-cargo-glow" />
+    <div className="air-route-orbit"><span className="air-route-plane"><Plane size={20} strokeWidth={2.2}/></span></div>
+    <div className="cargo-cube">
+      <div className="cargo-face cargo-front"><span className="cargo-mark"><Plane size={14} fill="currentColor"/> AAC</span><span className="cargo-code">AIR CARGO</span></div>
+      <div className="cargo-face cargo-back" />
+      <div className="cargo-face cargo-right" />
+      <div className="cargo-face cargo-left" />
+      <div className="cargo-face cargo-top" />
+      <div className="cargo-face cargo-bottom" />
+    </div>
+    <div className="cargo-floor-shadow" />
+    <div className="air-route-label"><span>DEL</span><span className="air-route-line"><i/><Plane size={12}/><i/></span><span>DXB</span></div>
+  </div>
+}
+
 function Toast({ message, onClose }) {
   if (!message) return null
   return <div role="status" className="fixed right-4 top-4 z-[100] flex max-w-sm items-start gap-3 rounded-xl border border-green-200 bg-white p-4 text-sm text-slate-700 shadow-2xl"><CheckCircle2 className="shrink-0 text-green-600" size={20}/><span className="leading-5">{message}</span><button onClick={onClose} aria-label="Close notification"><X size={16}/></button></div>
@@ -99,8 +116,9 @@ function AuthLayout({ children, title, text }) {
   return <main className="min-h-screen bg-white lg:grid lg:grid-cols-[.88fr_1.12fr]">
     <section className="auth-pattern relative hidden min-h-screen overflow-hidden bg-navy p-12 text-white lg:flex lg:flex-col">
       <div className="absolute -right-40 -top-32 h-[520px] w-[520px] rounded-full border border-white/10"/><div className="absolute -right-24 -top-16 h-[380px] w-[380px] rounded-full border border-white/10"/>
-      <Logo light/><div className="relative my-auto max-w-lg"><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-blue-100"><ShieldCheck size={15} className="text-gold"/> Secure client workspace</span><h1 className="font-display mt-7 text-4xl font-semibold leading-tight tracking-[-.04em] xl:text-5xl">Cargo operations,<br/>all in one place.</h1><p className="mt-5 max-w-md text-[15px] leading-7 text-blue-100/75">Compare rates, place bookings, manage documents and track every milestone with one clear, professional workspace.</p><div className="mt-10 grid grid-cols-3 gap-3">{[['Fast','Rate compare'],['Unified','Tracking'],['Secure','Documents']].map(([a,b])=><div key={a} className="rounded-xl border border-white/10 bg-white/[.07] p-4"><strong className="font-display text-lg">{a}</strong><span className="mt-1 block text-[10px] uppercase tracking-wider text-blue-200/70">{b}</span></div>)}</div></div>
-      <p className="text-xs text-blue-200/55">© {new Date().getFullYear()} Alliance Air Cargo</p>
+      <AirCargoVisual/>
+      <div className="relative z-10"><Logo light/></div><div className="relative z-10 my-auto max-w-lg"><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-blue-100"><ShieldCheck size={15} className="text-gold"/> Secure client workspace</span><h1 className="font-display mt-7 text-4xl font-semibold leading-tight tracking-[-.04em] xl:text-5xl">Cargo operations,<br/>all in one place.</h1><p className="mt-5 max-w-md text-[15px] leading-7 text-blue-100/75">Compare rates, place bookings, manage documents and track every milestone with one clear, professional workspace.</p><div className="mt-10 grid grid-cols-3 gap-3">{[['Fast','Rate compare'],['Unified','Tracking'],['Secure','Documents']].map(([a,b])=><div key={a} className="rounded-xl border border-white/10 bg-white/[.07] p-4 backdrop-blur-sm"><strong className="font-display text-lg">{a}</strong><span className="mt-1 block text-[10px] uppercase tracking-wider text-blue-200/70">{b}</span></div>)}</div></div>
+      <p className="relative z-10 text-xs text-blue-200/55">© {new Date().getFullYear()} Alliance Air Cargo</p>
     </section>
     <section className="flex min-h-screen flex-col bg-white">
       <header className="flex h-20 items-center justify-between border-b border-slate-100 px-5 sm:px-9 lg:hidden"><Logo/><a href={LANDING_URL} className="text-xs font-bold text-brand">Back to website</a></header>

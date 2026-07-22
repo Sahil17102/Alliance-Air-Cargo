@@ -18,6 +18,37 @@ button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
 .font-display { font-family: "Poppins", sans-serif; }
 .auth-pattern { background-image: radial-gradient(circle at 20% 20%, rgba(255,255,255,.13) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 60%, rgba(244,180,0,.25) 0 1px, transparent 1.5px); background-size: 32px 32px, 42px 42px; }
+.air-cargo-visual { position: absolute; z-index: 2; top: 4.5rem; right: 2.5rem; width: 260px; height: 235px; perspective: 900px; pointer-events: none; }
+.air-cargo-glow { position: absolute; inset: 25px; border-radius: 50%; background: radial-gradient(circle, rgba(15,98,254,.3), rgba(15,98,254,0) 68%); filter: blur(8px); animation: cargo-glow 4s ease-in-out infinite; }
+.air-route-orbit { position: absolute; inset: 5px 10px 10px; border: 1px solid rgba(147,197,253,.22); border-radius: 50%; transform: rotateX(64deg) rotateZ(-12deg); box-shadow: inset 0 0 28px rgba(15,98,254,.08), 0 0 30px rgba(15,98,254,.08); }
+.air-route-orbit::before,.air-route-orbit::after { content: ""; position: absolute; border-radius: 50%; }
+.air-route-orbit::before { inset: 18px; border: 1px dashed rgba(244,180,0,.22); }
+.air-route-orbit::after { left: 22px; top: 40px; width: 5px; height: 5px; background: #f4b400; box-shadow: 170px 101px 0 rgba(147,197,253,.85); }
+.air-route-plane { position: absolute; left: 50%; top: 50%; color: #fff; filter: drop-shadow(0 4px 8px rgba(0,0,0,.35)); animation: plane-orbit 8s linear infinite; }
+.cargo-cube { position: absolute; left: 72px; top: 66px; width: 116px; height: 78px; transform-style: preserve-3d; animation: cargo-float 5s ease-in-out infinite; }
+.cargo-face { position: absolute; border: 1px solid rgba(191,219,254,.45); background: linear-gradient(145deg, rgba(43,105,173,.96), rgba(15,62,107,.96)); box-shadow: inset 0 0 20px rgba(255,255,255,.05); backface-visibility: hidden; }
+.cargo-front,.cargo-back { width: 116px; height: 78px; }
+.cargo-front { display: flex; flex-direction: column; justify-content: center; padding: 14px; transform: translateZ(35px); }
+.cargo-back { transform: rotateY(180deg) translateZ(35px); }
+.cargo-right,.cargo-left { left: 23px; width: 70px; height: 78px; }
+.cargo-right { transform: rotateY(90deg) translateZ(58px); background: linear-gradient(145deg, rgba(32,82,139,.98), rgba(9,43,76,.98)); }
+.cargo-left { transform: rotateY(-90deg) translateZ(58px); }
+.cargo-top,.cargo-bottom { top: 4px; width: 116px; height: 70px; }
+.cargo-top { transform: rotateX(90deg) translateZ(39px); background: linear-gradient(145deg, rgba(73,133,198,.98), rgba(25,75,130,.98)); }
+.cargo-bottom { transform: rotateX(-90deg) translateZ(39px); }
+.cargo-front::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 10px; height: 7px; opacity: .35; background: repeating-linear-gradient(90deg,#fff 0 2px,transparent 2px 5px); }
+.cargo-mark { display: flex; align-items: center; gap: 6px; color: #fff; font-family: "Poppins",sans-serif; font-size: 16px; font-weight: 700; letter-spacing: .08em; }
+.cargo-mark svg { color: #f4b400; }
+.cargo-code { margin-top: 4px; color: rgba(219,234,254,.7); font-size: 7px; font-weight: 700; letter-spacing: .2em; }
+.cargo-floor-shadow { position: absolute; left: 74px; top: 166px; width: 116px; height: 25px; border-radius: 50%; background: rgba(2,20,37,.42); filter: blur(9px); animation: shadow-breathe 5s ease-in-out infinite; }
+.air-route-label { position: absolute; left: 45px; right: 45px; bottom: 4px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(191,219,254,.18); border-radius: 10px; background: rgba(255,255,255,.08); padding: 8px 11px; color: #dbeafe; font-size: 9px; font-weight: 800; letter-spacing: .1em; backdrop-filter: blur(8px); }
+.air-route-line { display: flex; flex: 1; align-items: center; color: #f4b400; }
+.air-route-line i { height: 1px; flex: 1; background: rgba(147,197,253,.3); }
+.air-route-line svg { margin-inline: 5px; transform: rotate(90deg); }
+@keyframes cargo-float { 0%,100% { transform: translateY(0) rotateX(-13deg) rotateY(-28deg); } 50% { transform: translateY(-10px) rotateX(-10deg) rotateY(-20deg); } }
+@keyframes plane-orbit { from { transform: rotate(0deg) translateX(116px) rotate(88deg); } to { transform: rotate(360deg) translateX(116px) rotate(88deg); } }
+@keyframes cargo-glow { 0%,100% { opacity: .55; transform: scale(.92); } 50% { opacity: .9; transform: scale(1.05); } }
+@keyframes shadow-breathe { 0%,100% { opacity: .8; transform: scaleX(1); } 50% { opacity: .42; transform: scaleX(.78); } }
 .shadow-card { box-shadow: 0 15px 42px rgba(18,53,91,.09); }
 .field { width: 100%; border: 1px solid #dbe3ec; border-radius: .75rem; background: #fff; padding: .8rem .9rem; font-size: .875rem; outline: none; transition: border-color .2s, box-shadow .2s; }
 .search-field { padding-left: 2.75rem !important; }
@@ -29,4 +60,5 @@ button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
 .card { border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; box-shadow: 0 10px 30px rgba(18,53,91,.055); }
 .fade { animation: fade .35s ease both; }
 @keyframes fade { from { opacity: 0; transform: translateY(7px); } }
+@media (max-width: 1279px) { .air-cargo-visual { top: 4.75rem; right: 1.25rem; transform: scale(.76); transform-origin: top right; opacity: .88; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
