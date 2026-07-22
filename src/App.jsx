@@ -442,5 +442,5 @@ export default function App() {
   if(route==='schedule')page=<SchedulePage/>
   if(route==='about')page=<AboutPage/>
   if(route==='contact')page=<ContactPage/>
-  return <><Header route={route}/><main id="main-content">{page}</main><Footer/><a href="https://wa.me/919810080808" target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp" className="fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-[#25D366] text-white shadow-xl transition hover:-translate-y-1"><MessageCircle size={24} fill="currentColor"/></a></>
+  return <><Header route={route}/><main id="main-content" className="site-pattern">{page}</main><Footer/><a href="https://wa.me/919810080808" target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp" className="fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-[#25D366] text-white shadow-xl transition hover:-translate-y-1"><MessageCircle size={24} fill="currentColor"/></a></>
 }

@@ -36,3 +36,5 @@ Employee accounts have no built-in/demo credentials. A verified client owner cre
 The browser keeps local storage as a temporary display fallback when the API is unavailable. Production wallet balances, wallet transactions and booking deductions are always enforced and stored atomically in PostgreSQL by the backend.
 
 Fare, charge and commodity records are maintained from the Super Admin console. Active commodity surcharges are read from the shared `admin_state` store during server-side freight calculation, so client booking totals update after an administrator saves a commodity change.
+
+Active Super Admin rate cards are matched server-side by origin, destination, commodity, effective date and chargeable-weight slab. A matching card controls base rate, minimum freight, volumetric divisor, fuel/sector/handling and X-ray charges in both `/api/rates/quote` and `/api/freight/calculate`; the default calculator controls remain the fallback when no card matches. NDR/RTO exceptions and weight-audit records are stored in the same authenticated admin state, while wallet recharges, debits, booking deductions and refunds remain in the PostgreSQL wallet transaction ledger.

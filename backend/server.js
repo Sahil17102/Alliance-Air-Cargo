@@ -192,6 +192,12 @@ const defaultChargeControls = {
   temperatureControlCharge: 350,
 }
 
+const defaultRateCards = [
+  { id: 'RC-DEL-DXB-25', name: 'DEL-DXB standard 25-99 kg', origin: 'DEL', destination: 'DXB', commodity: 'All cargo', customerGroup: 'Standard', minWeight: 25, maxWeight: 99, ratePerKg: 45, minimumFreight: 1500, volumetricDivisor: 6000, fuelSurchargePercent: 0, sectorSurcharge: 0, handlingCharge: 37.5, xrayRatePerKg: 1, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31', status: 'Active' },
+  { id: 'RC-DEL-DXB-100', name: 'DEL-DXB standard 100-499 kg', origin: 'DEL', destination: 'DXB', commodity: 'All cargo', customerGroup: 'Standard', minWeight: 100, maxWeight: 499, ratePerKg: 39, minimumFreight: 3900, volumetricDivisor: 6000, fuelSurchargePercent: 5, sectorSurcharge: 0, handlingCharge: 37.5, xrayRatePerKg: 1, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31', status: 'Active' },
+  { id: 'RC-BOM-FRA-PHA', name: 'BOM-FRA pharma priority', origin: 'BOM', destination: 'FRA', commodity: 'Pharma supplies', customerGroup: 'Standard', minWeight: 25, maxWeight: 1000, ratePerKg: 194, minimumFreight: 2500, volumetricDivisor: 6000, fuelSurchargePercent: 12, sectorSurcharge: 250, handlingCharge: 350, xrayRatePerKg: 1.5, effectiveFrom: '2026-01-01', effectiveTo: '2026-12-31', status: 'Active' },
+]
+
 const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback
 const money = value => Number(Number(value || 0).toFixed(2))
 const walletSeedFor = email => email === 'agent@alliancecargo.in' ? 84200 : 0
@@ -287,41 +293,81 @@ async function loadCommodityProfile(commodityName, db = pool) {
   return profile ? cleanObject(profile) : null
 }
 
+async function loadRateCards(db = pool) {
+  let rateCards = Array.isArray(memoryAdminState.rateCards) ? memoryAdminState.rateCards : defaultRateCards
+  if (db && databaseStatus === 'connected') {
+    const result = await db.query(`SELECT value FROM admin_state WHERE key = 'rateCards' LIMIT 1`)
+    if (Array.isArray(result.rows[0]?.value)) rateCards = result.rows[0].value
+  }
+  return rateCards.map(cleanObject)
+}
+
 async function calculateFreightDetails(data, db = pool) {
   const controls = await loadChargeControls(db)
   const commodityProfile = await loadCommodityProfile(data.commodity, db)
+  const rateCards = await loadRateCards(db)
   const pieces = Math.max(1, numberOr(data.pieces, 1))
   const actualWeight = Math.max(0, numberOr(data.actualWeight || data.weight, 0))
   const length = Math.max(0, numberOr(data.length, 0))
   const width = Math.max(0, numberOr(data.width, 0))
   const height = Math.max(0, numberOr(data.height, 0))
-  const divisor = Math.max(1, numberOr(controls.volumetricDivisor, defaultChargeControls.volumetricDivisor))
+  const origin = String(data.origin || '').trim().toUpperCase()
+  const destination = String(data.destination || '').trim().toUpperCase()
+  const commodity = String(data.commodity || '').trim().toLowerCase()
+  const pricingDate = String(data.bookingDate || new Date().toISOString().slice(0, 10))
+  const rateCard = rateCards.find(card => {
+    if (String(card.status || 'Active').toLowerCase() !== 'active') return false
+    if (String(card.origin || '').toUpperCase() !== origin || String(card.destination || '').toUpperCase() !== destination) return false
+    const cardCommodity = String(card.commodity || 'All cargo').trim().toLowerCase()
+    if (!['all', 'all cargo', 'any'].includes(cardCommodity) && cardCommodity !== commodity) return false
+    if (card.effectiveFrom && pricingDate < String(card.effectiveFrom)) return false
+    if (card.effectiveTo && pricingDate > String(card.effectiveTo)) return false
+    const previewDivisor = Math.max(1, numberOr(card.volumetricDivisor, controls.volumetricDivisor))
+    const previewVolumetric = (length * width * height * pieces) / previewDivisor
+    const previewWeight = Math.max(numberOr(card.minWeight, controls.minimumChargeableWeight), Math.ceil(Math.max(actualWeight, previewVolumetric)))
+    return previewWeight >= numberOr(card.minWeight, 0) && previewWeight <= numberOr(card.maxWeight, Number.MAX_SAFE_INTEGER)
+  }) || null
+  const pricingControls = rateCard ? {
+    ...controls,
+    baseRatePerKg: numberOr(rateCard.ratePerKg, controls.baseRatePerKg),
+    minimumChargeableWeight: numberOr(rateCard.minWeight, controls.minimumChargeableWeight),
+    volumetricDivisor: numberOr(rateCard.volumetricDivisor, controls.volumetricDivisor),
+    sectorSurcharge: numberOr(rateCard.sectorSurcharge, controls.sectorSurcharge),
+    xrayRatePerKg: numberOr(rateCard.xrayRatePerKg, controls.xrayRatePerKg),
+  } : controls
+  const divisor = Math.max(1, numberOr(pricingControls.volumetricDivisor, defaultChargeControls.volumetricDivisor))
   const volumetricWeight = (length * width * height * pieces) / divisor
   const chargeableWeight = Math.max(
-    numberOr(controls.minimumChargeableWeight, defaultChargeControls.minimumChargeableWeight),
+    numberOr(pricingControls.minimumChargeableWeight, defaultChargeControls.minimumChargeableWeight),
     Math.ceil(Math.max(actualWeight, volumetricWeight)),
   )
+  const baseRate = numberOr(pricingControls.baseRatePerKg, 45)
+  const baseFreight = Math.max(baseRate * chargeableWeight, numberOr(rateCard?.minimumFreight, 0))
+  const fuelSurcharge = baseFreight * numberOr(rateCard?.fuelSurchargePercent, 0) / 100
   const services = Array.isArray(data.extraServices) ? data.extraServices : []
   const chargeRows = [
-    { key: 'baseFreight', label: 'Base freight', detail: `₹${numberOr(controls.baseRatePerKg, 45).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.baseRatePerKg, 45) * chargeableWeight },
-    { key: 'sectorSurcharge', label: 'Sector surcharge', amount: numberOr(controls.sectorSurcharge, 0) },
-    { key: 'flightSurcharge', label: 'Flight surcharge', amount: numberOr(controls.flightSurcharge, 0) },
-    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, detail: commodityProfile ? 'Commodity Management rate' : 'Default charge profile', amount: numberOr(commodityProfile?.surcharge, controls.commoditySurcharge) },
-    { key: 'originStationCharge', label: `${String(data.origin || 'Origin')} station charges`, amount: numberOr(controls.originStationCharge, 0) },
-    { key: 'xrayCharges', label: 'X-ray screening charges', detail: `₹${numberOr(controls.xrayRatePerKg, 1).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.xrayRatePerKg, 1) * chargeableWeight },
-    { key: 'destinationStationCharge', label: `${String(data.destination || 'Destination')} station charges`, amount: numberOr(controls.destinationStationCharge, 0) },
+    { key: 'baseFreight', label: 'Base freight', detail: `₹${baseRate.toFixed(2)} × ${chargeableWeight.toFixed(2)} kg${rateCard ? ` · ${rateCard.id}` : ''}`, amount: baseFreight },
+    { key: 'fuelSurcharge', label: 'Fuel surcharge', detail: rateCard ? `${numberOr(rateCard.fuelSurchargePercent, 0).toFixed(2)}% of base freight` : 'Default rate', amount: fuelSurcharge },
+    { key: 'sectorSurcharge', label: 'Sector surcharge', amount: numberOr(pricingControls.sectorSurcharge, 0) },
+    { key: 'flightSurcharge', label: 'Flight surcharge', amount: numberOr(pricingControls.flightSurcharge, 0) },
+    { key: 'rateCardHandling', label: 'Rate card handling charge', amount: numberOr(rateCard?.handlingCharge, 0) },
+    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, detail: commodityProfile ? 'Commodity Management rate' : 'Default charge profile', amount: numberOr(commodityProfile?.surcharge, pricingControls.commoditySurcharge) },
+    { key: 'originStationCharge', label: `${String(data.origin || 'Origin')} station charges`, amount: numberOr(pricingControls.originStationCharge, 0) },
+    { key: 'xrayCharges', label: 'X-ray screening charges', detail: `₹${numberOr(pricingControls.xrayRatePerKg, 1).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(pricingControls.xrayRatePerKg, 1) * chargeableWeight },
+    { key: 'destinationStationCharge', label: `${String(data.destination || 'Destination')} station charges`, amount: numberOr(pricingControls.destinationStationCharge, 0) },
   ]
-  if (services.includes('handleWithCare')) chargeRows.push({ key: 'handleWithCare', label: 'Handle with care', amount: numberOr(controls.handleWithCareCharge, 0) })
-  if (services.includes('priorityHandling')) chargeRows.push({ key: 'priorityHandling', label: 'Priority handling', amount: numberOr(controls.priorityHandlingCharge, 0) })
-  if (services.includes('temperatureControl')) chargeRows.push({ key: 'temperatureControl', label: 'Temperature control', amount: numberOr(controls.temperatureControlCharge, 0) })
+  if (services.includes('handleWithCare')) chargeRows.push({ key: 'handleWithCare', label: 'Handle with care', amount: numberOr(pricingControls.handleWithCareCharge, 0) })
+  if (services.includes('priorityHandling')) chargeRows.push({ key: 'priorityHandling', label: 'Priority handling', amount: numberOr(pricingControls.priorityHandlingCharge, 0) })
+  if (services.includes('temperatureControl')) chargeRows.push({ key: 'temperatureControl', label: 'Temperature control', amount: numberOr(pricingControls.temperatureControlCharge, 0) })
   const charges = chargeRows.map(row => ({ ...row, amount: money(row.amount) }))
   return {
     weights: { totalActualWeight: money(actualWeight), totalVolumetricWeight: money(volumetricWeight), chargeableWeight: money(chargeableWeight) },
     charges,
     total: money(charges.reduce((sum, row) => sum + row.amount, 0)),
-    controls,
+    controls: pricingControls,
+    rateCard,
     commodityProfile,
-    pricingSource: 'super-admin',
+    pricingSource: rateCard ? 'super-admin-rate-card' : 'super-admin-default',
     flights: flightOptionsFor(String(data.origin || 'DEL'), String(data.destination || 'DXB'), data.bookingDate),
   }
 }
@@ -540,19 +586,43 @@ app.post('/api/quotes', asyncRoute(async (request, response) => {
   response.status(201).json({ quote: record, message: 'Quote request received' })
 }))
 
-app.post('/api/rates/quote', (request, response) => {
+app.post('/api/rates/quote', asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
   const chargeableWeight = Math.max(1, Math.ceil(Number(data.chargeableWeight || data.weight || 1)))
-  const base = data.destination === 'DXB' ? 168 : data.destination === 'SIN' ? 142 : 195
+  const origin = String(data.origin || '').toUpperCase()
+  const destination = String(data.destination || '').toUpperCase()
+  const commodity = String(data.commodity || '').toLowerCase()
+  const today = new Date().toISOString().slice(0, 10)
+  const rateCard = (await loadRateCards()).find(card => {
+    const cardCommodity = String(card.commodity || 'All cargo').toLowerCase()
+    return String(card.status || 'Active').toLowerCase() === 'active'
+      && String(card.origin || '').toUpperCase() === origin
+      && String(card.destination || '').toUpperCase() === destination
+      && (['all', 'all cargo', 'any'].includes(cardCommodity) || !commodity || cardCommodity === commodity)
+      && chargeableWeight >= numberOr(card.minWeight, 0)
+      && chargeableWeight <= numberOr(card.maxWeight, Number.MAX_SAFE_INTEGER)
+      && (!card.effectiveFrom || today >= String(card.effectiveFrom))
+      && (!card.effectiveTo || today <= String(card.effectiveTo))
+  }) || null
+  const fallbackRate = destination === 'DXB' ? 168 : destination === 'SIN' ? 142 : 195
+  const ratePerKg = numberOr(rateCard?.ratePerKg, fallbackRate)
+  const baseFreight = Math.max(chargeableWeight * ratePerKg, numberOr(rateCard?.minimumFreight, 0))
+  const cardTotal = baseFreight
+    + (baseFreight * numberOr(rateCard?.fuelSurchargePercent, 0) / 100)
+    + numberOr(rateCard?.sectorSurcharge, 0)
+    + numberOr(rateCard?.handlingCharge, 0)
+    + (chargeableWeight * numberOr(rateCard?.xrayRatePerKg, 0))
   response.json({
     chargeableWeight,
+    rateCard,
+    pricingSource: rateCard ? 'super-admin-rate-card' : 'fallback-rate',
     options: [
-      { carrier: 'Alliance Priority', flight: 'Direct · Daily', time: '1–2 days', rate: chargeableWeight * base, best: true },
-      { carrier: 'Alliance Standard', flight: '1 stop · Mon–Sat', time: '2–3 days', rate: chargeableWeight * Math.max(1, base - 24) },
-      { carrier: 'Alliance Economy', flight: 'Consolidated', time: '3–5 days', rate: chargeableWeight * Math.max(1, base - 41) },
+      { carrier: 'Alliance Priority', flight: 'Direct · Daily', time: '1–2 days', rate: money(cardTotal * 1.08), best: true },
+      { carrier: 'Alliance Standard', flight: '1 stop · Mon–Sat', time: '2–3 days', rate: money(cardTotal) },
+      { carrier: 'Alliance Economy', flight: 'Consolidated', time: '3–5 days', rate: money(cardTotal * 0.94) },
     ],
   })
-})
+}))
 
 app.post('/api/freight/calculate', authenticate, asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
@@ -826,15 +896,16 @@ app.post('/api/admin/wallets/:email/adjust', authenticate, requireRole('superadm
     if (direction === 'debit' && currentBalance < amount) throw Object.assign(new Error('Debit cannot exceed the available wallet balance'), { status: 400 })
     const balanceAfter = money(currentBalance + (direction === 'credit' ? amount : -amount))
     const transactionId = `WTX-${crypto.randomUUID().slice(0, 10).toUpperCase()}`
-    const reference = `ADMIN-${Date.now().toString(36).toUpperCase()}`
+    const transactionType = direction === 'credit' ? 'Wallet recharge' : 'Admin debit adjustment'
+    const reference = `${direction === 'credit' ? 'RECHARGE' : 'ADMIN-DEBIT'}-${Date.now().toString(36).toUpperCase()}`
     const updated = await client.query(
       `UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
       [email, balanceAfter],
     )
     const transaction = await client.query(
       `INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after)
-       VALUES ($1, $2, $3, 'Admin adjustment', $4, $5, $6, $7) RETURNING *`,
-      [transactionId, email, direction, amount, reference, note, balanceAfter],
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [transactionId, email, direction, transactionType, amount, reference, note, balanceAfter],
     )
     await client.query('COMMIT')
     response.json({ wallet: walletJson(updated.rows[0]), transaction: transactionJson(transaction.rows[0]) })

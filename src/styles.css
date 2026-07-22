@@ -23,6 +23,23 @@ button, a { outline-offset: 4px; }
 .shadow-card { box-shadow: 0 12px 35px rgba(18, 53, 91, .08); }
 .hero-overlay { background: linear-gradient(90deg, rgba(7, 30, 54, .92) 0%, rgba(10, 42, 72, .76) 45%, rgba(12, 48, 82, .20) 76%, transparent 100%); }
 .dot-map { background-image: radial-gradient(circle, rgba(15,98,254,.18) 1.2px, transparent 1.2px); background-size: 18px 18px; }
+.site-pattern .section-pad.bg-white {
+  background-color:#fff;
+  background-image:
+    radial-gradient(circle at 8% 18%, rgba(15,98,254,.075) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 92% 78%, rgba(244,180,0,.09) 0 2px, transparent 2.5px),
+    linear-gradient(120deg, transparent 0 48.8%, rgba(15,98,254,.035) 49%, transparent 49.2%);
+  background-size:34px 34px,42px 42px,180px 180px;
+}
+.site-pattern .section-pad.bg-mist {
+  background-color:#f5f7fa;
+  background-image:
+    linear-gradient(rgba(15,98,254,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15,98,254,.035) 1px, transparent 1px),
+    radial-gradient(circle at 70% 20%, rgba(244,180,0,.08), transparent 28%);
+  background-size:52px 52px,52px 52px,100% 100%;
+}
+.site-pattern .section-pad > .container-site { position:relative; z-index:1; }
 .route-line { stroke-dasharray: 8 8; animation: route 18s linear infinite; }
 @keyframes route { to { stroke-dashoffset: -160; } }
 .plane-float { animation: float 5s ease-in-out infinite; }
