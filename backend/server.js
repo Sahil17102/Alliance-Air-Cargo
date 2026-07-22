@@ -78,6 +78,16 @@ const schemaSql = `
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS client_employees (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS client_employees_owner_idx ON client_employees (owner_email, created_at DESC);
       CREATE TABLE IF NOT EXISTS cargo_bookings (
         awb TEXT PRIMARY KEY,
         owner_email TEXT,
@@ -150,8 +160,15 @@ async function initializeDatabase() {
 const demoAccounts = new Map([
   ['superadmin@alliancecargo.in', { password: 'Admin@123', otp: '246810', name: 'Aarav Sharma', business: 'Alliance Air Cargo', role: 'superadmin', status: 'Active' }],
   ['agent@alliancecargo.in', { password: 'Cargo@123', otp: '123456', name: 'Demo Agent', business: 'Northstar Exports', role: 'agent', status: 'Approved' }],
-  ['ops@alliancecargo.in', { password: 'Ops@123', otp: '123456', name: 'Operations User', business: 'Alliance Air Cargo', role: 'employee', status: 'Active' }],
 ])
+
+const employeePermissions = new Set(['viewShipments', 'createBooking', 'deleteBooking', 'trackShipments', 'viewWallet'])
+const normalizeEmployeePermissions = values => {
+  const permissions = [...new Set((Array.isArray(values) ? values : []).filter(permission => employeePermissions.has(permission)))]
+  if (permissions.includes('createBooking') && !permissions.includes('viewWallet')) permissions.push('viewWallet')
+  if (permissions.some(permission => ['createBooking', 'deleteBooking', 'trackShipments'].includes(permission)) && !permissions.includes('viewShipments')) permissions.push('viewShipments')
+  return permissions
+}
 
 const normalizeAgentAccount = value => String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
 const demoAgentDirectory = new Map([
@@ -319,7 +336,7 @@ const flightOptionsFor = (origin, destination, bookingDate) => {
 }
 
 function issueSession(response, user) {
-  const token = jwt.sign({ sub: user.email, role: user.role, name: user.name }, jwtSecret, { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m' })
+  const token = jwt.sign({ sub: user.email, role: user.role, name: user.name, business: user.business, ownerEmail: user.ownerEmail, permissions: user.permissions }, jwtSecret, { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m' })
   response.cookie('aac_session', token, {
     httpOnly: true,
     secure: production,
@@ -345,6 +362,21 @@ function requireRole(...roles) {
   return (request, response, next) => roles.includes(request.user?.role)
     ? next()
     : response.status(403).json({ message: 'You do not have permission for this action' })
+}
+
+const accountOwnerEmail = user => String(user?.role === 'employee' ? user.ownerEmail : user?.sub || '').trim().toLowerCase()
+
+function requireEmployeePermission(permission) {
+  return asyncRoute(async (request, response, next) => {
+    if (request.user?.role !== 'employee') return next()
+    const result = await requireDatabase().query('SELECT owner_email, data FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [String(request.user.sub || '').toLowerCase()])
+    if (!result.rowCount || String(result.rows[0].data?.status || '').toLowerCase() !== 'active') return response.status(403).json({ message: 'Employee access is inactive. Contact your client account owner.' })
+    const permissions = Array.isArray(result.rows[0].data?.permissions) ? result.rows[0].data.permissions : []
+    if (!permissions.includes(permission)) return response.status(403).json({ message: `Your employee account does not have ${permission} permission` })
+    request.user.ownerEmail = result.rows[0].owner_email
+    request.user.permissions = permissions
+    return next()
+  })
 }
 
 app.get('/', (_request, response) => response.json({
@@ -379,11 +411,20 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   let valid = user && ((password && password === user.password) || (otp && otp === user.otp))
 
   if (!valid && pool) {
-    const result = await pool.query('SELECT data, password_hash FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
-    if (result.rowCount) {
-      const saved = result.rows[0]
-      valid = Boolean(password && saved.password_hash && await bcrypt.compare(password, saved.password_hash))
-      user = { ...saved.data, email, role: 'agent' }
+    if (requestedRole === 'employee') {
+      const result = await pool.query('SELECT owner_email, data, password_hash FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
+      if (result.rowCount) {
+        const saved = result.rows[0]
+        valid = Boolean(password && saved.password_hash && await bcrypt.compare(password, saved.password_hash) && String(saved.data?.status || '').toLowerCase() === 'active')
+        user = { ...saved.data, email, role: 'employee', ownerEmail: saved.owner_email }
+      }
+    } else {
+      const result = await pool.query('SELECT data, password_hash FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
+      if (result.rowCount) {
+        const saved = result.rows[0]
+        valid = Boolean(password && saved.password_hash && await bcrypt.compare(password, saved.password_hash))
+        user = { ...saved.data, email, role: 'agent' }
+      }
     }
   }
 
@@ -399,7 +440,11 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
 app.get('/api/auth/me', authenticate, asyncRoute(async (request, response) => {
   const email = String(request.user.sub || '').toLowerCase()
   let account = demoAccounts.get(email)
-  if (request.user.role === 'agent' && pool && databaseStatus === 'connected') {
+  if (request.user.role === 'employee' && pool && databaseStatus === 'connected') {
+    const result = await pool.query('SELECT owner_email, data FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
+    if (!result.rowCount || String(result.rows[0].data?.status || '').toLowerCase() !== 'active') return response.status(403).json({ message: 'Employee access is inactive' })
+    account = { ...result.rows[0].data, email, role: 'employee', ownerEmail: result.rows[0].owner_email }
+  } else if (request.user.role === 'agent' && pool && databaseStatus === 'connected') {
     const result = await pool.query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
     if (result.rowCount) account = { ...result.rows[0].data, email, role: 'agent', status: normalizedAgentStatus(result.rows[0].data.status) }
   }
@@ -417,6 +462,8 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   const email = String(data.email || '').trim().toLowerCase()
   const password = String(data.password || '')
   if (!email || password.length < 8) return response.status(400).json({ message: 'A valid email and password of at least 8 characters are required' })
+  const employeeConflict = await requireDatabase().query('SELECT 1 FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
+  if (employeeConflict.rowCount) return response.status(409).json({ message: 'This email is already assigned to an employee login' })
   const id = `AGT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
   const passwordHash = await bcrypt.hash(password, 12)
   const record = { ...publicAccount(data), id, email, role: 'agent', status: 'Pending', submittedAt: new Date().toISOString() }
@@ -429,6 +476,59 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   await ensureWallet(requireDatabase(), email, record)
   issueSession(response, record)
   response.status(201).json({ account: record, message: 'Registration submitted for Super Admin approval' })
+}))
+
+app.get('/api/client/employees', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const result = await requireDatabase().query('SELECT data FROM client_employees WHERE owner_email = $1 ORDER BY created_at DESC', [String(request.user.sub).toLowerCase()])
+  response.json({ employees: result.rows.map(row => publicAccount(row.data)) })
+}))
+
+app.post('/api/client/employees', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const data = cleanObject(request.body)
+  const ownerEmail = String(request.user.sub || '').toLowerCase()
+  const email = String(data.email || '').trim().toLowerCase()
+  const password = String(data.password || '')
+  const name = String(data.name || '').trim()
+  const permissions = normalizeEmployeePermissions(data.permissions)
+  if (!name || !/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({ message: 'Employee name and valid email are required' })
+  if (email === ownerEmail) return response.status(400).json({ message: 'Employee email must be different from the client owner email' })
+  if (password.length < 8) return response.status(400).json({ message: 'Create an employee password of at least 8 characters' })
+  if (!permissions.length) return response.status(400).json({ message: 'Select at least one employee permission' })
+  const ownerRegistration = await requireDatabase().query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [ownerEmail])
+  if (ownerRegistration.rowCount && normalizedAgentStatus(ownerRegistration.rows[0].data?.status) !== 'Active') return response.status(403).json({ message: 'Super Admin approval is required before creating employee access' })
+  const agentConflict = await requireDatabase().query('SELECT 1 FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
+  const employeeConflict = await requireDatabase().query('SELECT 1 FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
+  if (agentConflict.rowCount || employeeConflict.rowCount || demoAccounts.has(email)) return response.status(409).json({ message: 'This email already belongs to another portal account' })
+  const id = `EMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
+  const passwordHash = await bcrypt.hash(password, 12)
+  const record = { id, name, email, phone: String(data.phone || '').trim(), designation: String(data.designation || 'Booking executive').trim(), permissions, status: 'Active', role: 'employee', business: request.user.business || 'Client account', ownerEmail, createdAt: new Date().toISOString() }
+  await requireDatabase().query('INSERT INTO client_employees (id, owner_email, email, password_hash, data) VALUES ($1, $2, $3, $4, $5)', [id, ownerEmail, email, passwordHash, record])
+  response.status(201).json({ employee: record, message: 'Employee credentials created' })
+}))
+
+app.patch('/api/client/employees/:id', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const id = String(request.params.id || '').trim()
+  const ownerEmail = String(request.user.sub || '').toLowerCase()
+  const data = cleanObject(request.body)
+  const existing = await requireDatabase().query('SELECT data FROM client_employees WHERE id = $1 AND owner_email = $2 LIMIT 1', [id, ownerEmail])
+  if (!existing.rowCount) return response.status(404).json({ message: 'Employee account not found' })
+  const permissions = data.permissions === undefined ? existing.rows[0].data.permissions : normalizeEmployeePermissions(data.permissions)
+  if (!permissions.length) return response.status(400).json({ message: 'Select at least one employee permission' })
+  const status = data.status === undefined ? existing.rows[0].data.status : String(data.status)
+  if (!['Active', 'Inactive'].includes(status)) return response.status(400).json({ message: 'Employee status must be Active or Inactive' })
+  const nextData = { ...existing.rows[0].data, name: String(data.name ?? existing.rows[0].data.name).trim(), phone: String(data.phone ?? existing.rows[0].data.phone ?? '').trim(), designation: String(data.designation ?? existing.rows[0].data.designation ?? '').trim(), permissions, status, updatedAt: new Date().toISOString() }
+  const password = String(data.password || '')
+  if (password && password.length < 8) return response.status(400).json({ message: 'New employee password must be at least 8 characters' })
+  const result = password
+    ? await requireDatabase().query('UPDATE client_employees SET password_hash = $3, data = $4, updated_at = NOW() WHERE id = $1 AND owner_email = $2 RETURNING data', [id, ownerEmail, await bcrypt.hash(password, 12), nextData])
+    : await requireDatabase().query('UPDATE client_employees SET data = $3, updated_at = NOW() WHERE id = $1 AND owner_email = $2 RETURNING data', [id, ownerEmail, nextData])
+  response.json({ employee: publicAccount(result.rows[0].data) })
+}))
+
+app.delete('/api/client/employees/:id', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const result = await requireDatabase().query('DELETE FROM client_employees WHERE id = $1 AND owner_email = $2 RETURNING id', [String(request.params.id || ''), String(request.user.sub || '').toLowerCase()])
+  if (!result.rowCount) return response.status(404).json({ message: 'Employee account not found' })
+  response.json({ deleted: result.rows[0].id })
 }))
 
 app.post('/api/quotes', asyncRoute(async (request, response) => {
@@ -496,12 +596,13 @@ app.get('/api/agents/lookup/:accountNumber', authenticate, asyncRoute(async (req
   response.json({ agent })
 }))
 
-app.get('/api/wallet', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+app.get('/api/wallet', authenticate, requireRole('agent', 'employee'), requireEmployeePermission('viewWallet'), asyncRoute(async (request, response) => {
   const db = requireDatabase()
-  const account = await ensureWallet(db, request.user.sub, { name: request.user.name })
+  const ownerEmail = accountOwnerEmail(request.user)
+  const account = await ensureWallet(db, ownerEmail, { name: request.user.name, business: request.user.business })
   const transactions = await db.query(
     `SELECT * FROM wallet_transactions WHERE owner_email = $1 ORDER BY created_at DESC LIMIT 100`,
-    [request.user.sub],
+    [ownerEmail],
   )
   response.json({ wallet: walletJson(account), transactions: transactions.rows.map(transactionJson) })
 }))
@@ -539,8 +640,9 @@ app.post('/api/wallet/top-up', authenticate, requireRole('agent'), asyncRoute(as
   }
 }))
 
-app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+app.post('/api/bookings', authenticate, requireRole('agent', 'employee'), requireEmployeePermission('createBooking'), asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
+  const ownerEmail = accountOwnerEmail(request.user)
   const selectedFlight = cleanObject(data.selectedFlight)
   const pickupDate = String(data.pickup || '')
   const flightDate = String(selectedFlight.date || data.bookingDate || '')
@@ -550,7 +652,7 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
   const client = await requireDatabase().connect()
   try {
     await client.query('BEGIN')
-    const registration = await client.query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1 FOR SHARE', [String(request.user.sub || '').toLowerCase()])
+    const registration = await client.query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1 FOR SHARE', [ownerEmail])
     if (registration.rowCount && normalizedAgentStatus(registration.rows[0].data?.status) !== 'Active') {
       throw Object.assign(new Error('Business verification is pending. Super Admin approval is required before booking.'), { status: 403 })
     }
@@ -558,8 +660,8 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
     if (duplicate.rowCount) throw Object.assign(new Error('This booking has already been confirmed'), { status: 409 })
     const freightSummary = await calculateFreightDetails(data, client)
     const bookingAmount = money(freightSummary.total)
-    await ensureWallet(client, request.user.sub, { name: request.user.name, business: data.shipper })
-    const locked = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [request.user.sub])
+    await ensureWallet(client, ownerEmail, { name: request.user.name, business: data.shipper || request.user.business })
+    const locked = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [ownerEmail])
     const account = locked.rows[0]
     if (account.status !== 'Active') throw Object.assign(new Error('Wallet is frozen. Contact support before booking.'), { status: 403 })
     if (Number(account.balance) < bookingAmount) {
@@ -571,7 +673,9 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
       ...data,
       id: awb,
       awb,
-      ownerEmail: request.user.sub,
+      ownerEmail,
+      bookedBy: request.user.sub,
+      bookedByName: request.user.name,
       agent: data.shipper || request.user.name,
       route: `${data.origin || ''} → ${data.destination || ''}`,
       status: data.status || 'Booked',
@@ -584,15 +688,15 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
       walletTransactionId: transactionId,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
     }
-    await client.query('INSERT INTO cargo_bookings (awb, owner_email, data) VALUES ($1, $2, $3)', [awb, request.user.sub, record])
+    await client.query('INSERT INTO cargo_bookings (awb, owner_email, data) VALUES ($1, $2, $3)', [awb, ownerEmail, record])
     const updated = await client.query(
       `UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
-      [request.user.sub, balanceAfter],
+      [ownerEmail, balanceAfter],
     )
     const transaction = await client.query(
       `INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after)
        VALUES ($1, $2, 'debit', 'Shipment booking', $3, $4, $5, $6) RETURNING *`,
-      [transactionId, request.user.sub, bookingAmount, awb, `${data.origin || ''} → ${data.destination || ''} · ${selectedFlight.flightNumber || 'Selected flight'}`, balanceAfter],
+      [transactionId, ownerEmail, bookingAmount, awb, `${data.origin || ''} → ${data.destination || ''} · ${selectedFlight.flightNumber || 'Selected flight'} · Booked by ${request.user.sub}`, balanceAfter],
     )
     await client.query('COMMIT')
     response.status(201).json({ booking: record, wallet: walletJson(updated.rows[0]), transaction: transactionJson(transaction.rows[0]) })
@@ -604,13 +708,47 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
   }
 }))
 
-app.get('/api/shipments', authenticate, asyncRoute(async (request, response) => {
+app.get('/api/shipments', authenticate, requireRole('agent', 'employee', 'superadmin'), requireEmployeePermission('viewShipments'), asyncRoute(async (request, response) => {
   const admin = request.user.role === 'superadmin'
+  const ownerEmail = accountOwnerEmail(request.user)
   const result = await requireDatabase().query(
     `SELECT data FROM cargo_bookings WHERE ($1::boolean OR owner_email = $2) ORDER BY created_at DESC`,
-    [admin, request.user.sub],
+    [admin, ownerEmail],
   )
   response.json({ shipments: result.rows.map(row => row.data) })
+}))
+
+app.delete('/api/bookings/:awb', authenticate, requireRole('agent', 'employee'), requireEmployeePermission('deleteBooking'), asyncRoute(async (request, response) => {
+  const ownerEmail = accountOwnerEmail(request.user)
+  const awb = String(request.params.awb || '').trim()
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    const existing = await client.query('SELECT data FROM cargo_bookings WHERE awb = $1 AND owner_email = $2 FOR UPDATE', [awb, ownerEmail])
+    if (!existing.rowCount) throw Object.assign(new Error('Shipment was not found in this client account'), { status: 404 })
+    if (!['Booked', 'Cancelled'].includes(String(existing.rows[0].data?.status || ''))) throw Object.assign(new Error('Only booked or cancelled shipments can be deleted'), { status: 409 })
+    const refundAmount = money(existing.rows[0].data?.total)
+    let wallet = null
+    let transaction = null
+    if (refundAmount > 0 && existing.rows[0].data?.payment === 'Wallet paid') {
+      await ensureWallet(client, ownerEmail)
+      const lockedWallet = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [ownerEmail])
+      const balanceAfter = money(Number(lockedWallet.rows[0].balance) + refundAmount)
+      const updatedWallet = await client.query('UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *', [ownerEmail, balanceAfter])
+      const transactionId = `WTX-${crypto.randomUUID().slice(0, 10).toUpperCase()}`
+      const inserted = await client.query(`INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after) VALUES ($1, $2, 'credit', 'Shipment cancellation refund', $3, $4, $5, $6) RETURNING *`, [transactionId, ownerEmail, refundAmount, awb, `Deleted by ${request.user.sub}`, balanceAfter])
+      wallet = walletJson(updatedWallet.rows[0])
+      transaction = transactionJson(inserted.rows[0])
+    }
+    await client.query('DELETE FROM cargo_bookings WHERE awb = $1 AND owner_email = $2', [awb, ownerEmail])
+    await client.query('COMMIT')
+    response.json({ deleted: awb, wallet, transaction })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }))
 
 app.get('/api/admin/bootstrap', authenticate, requireRole('superadmin'), asyncRoute(async (_request, response) => {

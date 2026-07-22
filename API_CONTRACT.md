@@ -11,8 +11,13 @@ The backend implements these endpoints:
 | `POST` | `/api/auth/login` | Client/Admin | Authenticate and issue secure session |
 | `POST` | `/api/auth/register` | Client | Submit agent registration |
 | `GET` | `/api/auth/me` | Client | Refresh the signed-in account and latest approval status |
+| `GET` | `/api/client/employees` | Client owner | List employee logins created inside the client workspace |
+| `POST` | `/api/client/employees` | Client owner | Create employee credentials and order permissions |
+| `PATCH` | `/api/client/employees/:id` | Client owner | Change employee details, password, permissions or login status |
+| `DELETE` | `/api/client/employees/:id` | Client owner | Permanently remove an employee login |
 | `GET` | `/api/shipments` | Client | Load authenticated customer shipments |
 | `POST` | `/api/bookings` | Client | Atomically create a cargo booking and debit its server-calculated freight from the wallet |
+| `DELETE` | `/api/bookings/:awb` | Client | Delete an eligible booking and atomically refund wallet-paid freight |
 | `POST` | `/api/rates/quote` | Client | Calculate live rate from admin-managed tariffs |
 | `POST` | `/api/freight/calculate` | Client | Calculate booking weights, controlled surcharges, grand total and available flights |
 | `GET` | `/api/agents/lookup/:accountNumber` | Client | Verify consignee account and auto-fill approved carrier/agent details |
@@ -25,6 +30,8 @@ The backend implements these endpoints:
 | `PATCH` | `/api/admin/state` | Super Admin | Persist an updated admin module |
 
 All authenticated requests use `credentials: include`. The backend must allow the exact frontend origins, return `Access-Control-Allow-Credentials: true`, use secure cookies with `SameSite=None`, validate roles server-side and never trust a role sent by a browser.
+
+Employee accounts have no built-in/demo credentials. A verified client owner creates each employee login inside Client Portal → Employee Access and assigns `viewShipments`, `createBooking`, `deleteBooking`, `trackShipments` and/or `viewWallet`. Every protected request reloads the employee's current status and permissions from PostgreSQL and scopes data to the owning client account.
 
 The browser keeps local storage as a temporary display fallback when the API is unavailable. Production wallet balances, wallet transactions and booking deductions are always enforced and stored atomically in PostgreSQL by the backend.
 
