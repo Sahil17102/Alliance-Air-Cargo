@@ -19,8 +19,6 @@ button, a { outline-offset: 4px; }
 .font-display { font-family: "Poppins", sans-serif; }
 .section-pad { padding-block: clamp(4.5rem, 8vw, 7.5rem); }
 .container-site { width: min(1180px, calc(100% - 2rem)); margin-inline: auto; }
-.skip-link { position: fixed; top: -4rem; left: 1rem; z-index: 100; border-radius: .5rem; background: #12355b; color: white; padding: .75rem 1rem; transition: top .2s; }
-.skip-link:focus { top: 1rem; }
 .shadow-soft { box-shadow: 0 18px 50px rgba(18, 53, 91, .09); }
 .shadow-card { box-shadow: 0 12px 35px rgba(18, 53, 91, .08); }
 .hero-overlay { background: linear-gradient(90deg, rgba(7, 30, 54, .92) 0%, rgba(10, 42, 72, .76) 45%, rgba(12, 48, 82, .20) 76%, transparent 100%); }
