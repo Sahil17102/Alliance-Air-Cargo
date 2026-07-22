@@ -2,7 +2,7 @@
 
 For automatic cross-site synchronization, the backend is the single source of truth. PostgreSQL must never be accessed directly by a static frontend.
 
-The frontend integration layer currently expects these endpoints:
+The backend implements these endpoints:
 
 | Method | Endpoint | Consumer | Purpose |
 | --- | --- | --- | --- |
@@ -18,4 +18,4 @@ The frontend integration layer currently expects these endpoints:
 
 All authenticated requests use `credentials: include`. The backend must allow the exact frontend origins, return `Access-Control-Allow-Credentials: true`, use secure cookies with `SameSite=None`, validate roles server-side and never trust a role sent by a browser.
 
-The static local-storage data remains a fallback until these endpoints are implemented and available.
+The browser keeps local storage as a temporary offline fallback when the API is unavailable. Production records are stored in PostgreSQL by the backend.

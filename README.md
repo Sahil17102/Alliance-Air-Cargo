@@ -2,6 +2,8 @@
 
 Three independently deployable frontend applications are included.
 
+The repository also includes the shared Node.js/PostgreSQL API used by all three applications. Render runs it from the root `Dockerfile`.
+
 ## 1. Public landing website
 
 ```bash
@@ -70,4 +72,4 @@ The Super Admin output is generated in `super-admin/dist/`.
 
 Render configuration is documented in `RENDER_ENV.md`. The shared backend endpoints required for real-time rate, booking, approval and shipment synchronization are documented in `API_CONTRACT.md`.
 
-Authentication, OTP delivery, live airline rates, payment gateways and shared cross-site database persistence are represented as frontend workflows and require backend APIs in the next phase.
+The backend currently provides database-backed quote requests, registrations, bookings, shipments, admin state, rate calculation and secure cookie sessions. SMTP/SMS OTP delivery, airline inventory providers and payment gateways still require their respective external provider credentials.

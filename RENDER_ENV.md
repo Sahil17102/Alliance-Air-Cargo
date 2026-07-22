@@ -6,6 +6,14 @@ The three frontends must be deployed as separate Render Static Sites. The backen
 
 Service URL: `https://alliance-air-cargo.onrender.com`
 
+Runtime: `Docker`
+
+Dockerfile path: `./Dockerfile`
+
+Docker context: `.`
+
+Health check path: `/health`
+
 Set these in Render Dashboard → Backend service → Environment:
 
 ```env
@@ -80,7 +88,3 @@ Build command: `npm install && npm run build`
 Publish directory: `dist`
 
 The landing and client portal contain no link to the Super Admin URL. Admin access remains a private, separately distributed address.
-
-## Current live status
-
-At the time of configuration, the three provided Static Site URLs returned HTTP 404, and the backend did not answer within the health-check timeout. Confirm each Render service has the correct root directory, build command and publish directory, then redeploy.

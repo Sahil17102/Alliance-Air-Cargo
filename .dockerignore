@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+dist
+client-portal
+super-admin
+public
+src
+*.log
+.env*
+!backend.env.example
