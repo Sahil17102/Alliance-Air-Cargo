@@ -13,6 +13,7 @@ The backend implements these endpoints:
 | `GET` | `/api/shipments` | Client | Load authenticated customer shipments |
 | `POST` | `/api/bookings` | Client | Create cargo booking |
 | `POST` | `/api/rates/quote` | Client | Calculate live rate from admin-managed tariffs |
+| `GET` | `/api/agents/lookup/:accountNumber` | Client | Verify consignee account and auto-fill approved carrier/agent details |
 | `GET` | `/api/admin/bootstrap` | Super Admin | Load users, agents, rates, flights and operational state |
 | `PATCH` | `/api/admin/state` | Super Admin | Persist an updated admin module |
 

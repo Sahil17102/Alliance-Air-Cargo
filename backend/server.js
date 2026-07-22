@@ -130,6 +130,13 @@ const demoAccounts = new Map([
   ['ops@alliancecargo.in', { password: 'Ops@123', otp: '123456', name: 'Operations User', business: 'Alliance Air Cargo', role: 'employee', status: 'Active' }],
 ])
 
+const normalizeAgentAccount = value => String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+const demoAgentDirectory = new Map([
+  ['669896496', { consigneeCompany: 'GulfLink Trading LLC', carrierAgentName: 'Alliance Air Cargo LLC', agentCity: 'Dubai', iataCode: '14-3-7821', carrierAccountNumber: '66-9896496' }],
+  ['AACDEL1002', { consigneeCompany: 'Northstar Exports Pvt. Ltd.', carrierAgentName: 'Alliance Air Cargo India Pvt. Ltd.', agentCity: 'New Delhi', iataCode: '14-3-7820', carrierAccountNumber: 'AAC-DEL-1002' }],
+  ['AACBOM1003', { consigneeCompany: 'Westline Logistics Pvt. Ltd.', carrierAgentName: 'Alliance Air Cargo India Pvt. Ltd.', agentCity: 'Mumbai', iataCode: '14-3-7822', carrierAccountNumber: 'AAC-BOM-1003' }],
+])
+
 function issueSession(response, user) {
   const token = jwt.sign({ sub: user.email, role: user.role, name: user.name }, jwtSecret, { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m' })
   response.cookie('aac_session', token, {
@@ -251,6 +258,43 @@ app.post('/api/rates/quote', (request, response) => {
     ],
   })
 })
+
+app.get('/api/agents/lookup/:accountNumber', authenticate, asyncRoute(async (request, response) => {
+  const normalized = normalizeAgentAccount(request.params.accountNumber)
+  if (normalized.length < 6 || normalized.length > 32) return response.status(400).json({ message: 'Enter a valid account number' })
+
+  let agent = demoAgentDirectory.get(normalized)
+  if (!agent && pool && databaseStatus === 'connected') {
+    const [registrationResult, directoryResult] = await Promise.all([
+      pool.query(
+        `SELECT data FROM agent_registrations
+       WHERE UPPER(REGEXP_REPLACE(COALESCE(data->>'accountNumber', data->>'carrierAccountNumber', ''), '[^a-zA-Z0-9]', '', 'g')) = $1
+       AND LOWER(COALESCE(data->>'status', '')) IN ('approved', 'active')
+       LIMIT 1`,
+        [normalized],
+      ),
+      pool.query(`SELECT value FROM admin_state WHERE key = 'agents' LIMIT 1`),
+    ])
+    const managedAgents = Array.isArray(directoryResult.rows[0]?.value) ? directoryResult.rows[0].value : []
+    const managedAgent = managedAgents.find(item =>
+      normalizeAgentAccount(item?.accountNumber || item?.carrierAccountNumber) === normalized
+      && /^(active|approved)$/i.test(String(item?.status || '')),
+    )
+    const data = managedAgent || registrationResult.rows[0]?.data
+    if (data) {
+      agent = {
+        consigneeCompany: data.business || data.name || data.consigneeCompany || '',
+        carrierAgentName: data.carrierAgentName || data.agentName || data.business || '',
+        agentCity: data.agentCity || data.city || data.station || '',
+        iataCode: data.iataCode || '',
+        carrierAccountNumber: data.carrierAccountNumber || data.accountNumber || request.params.accountNumber,
+      }
+    }
+  }
+
+  if (!agent) return response.status(404).json({ message: 'No approved agent found for this account number' })
+  response.json({ agent })
+}))
 
 app.post('/api/bookings', authenticate, asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)

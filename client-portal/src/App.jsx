@@ -20,6 +20,31 @@ const defaultShipments = [
   { awb:'157-33190276', origin:'DEL', destination:'LHR', commodity:'Garments', weight:420, status:'At hub', milestone:'Customs cleared', eta:'25 Jul, 18:40', progress:46 },
 ]
 
+const normalizeAgentAccount = value => String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+const demoAgentDirectory = {
+  '669896496': {
+    consigneeCompany: 'GulfLink Trading LLC',
+    carrierAgentName: 'Alliance Air Cargo LLC',
+    agentCity: 'Dubai',
+    iataCode: '14-3-7821',
+    carrierAccountNumber: '66-9896496',
+  },
+  AACDEL1002: {
+    consigneeCompany: 'Northstar Exports Pvt. Ltd.',
+    carrierAgentName: 'Alliance Air Cargo India Pvt. Ltd.',
+    agentCity: 'New Delhi',
+    iataCode: '14-3-7820',
+    carrierAccountNumber: 'AAC-DEL-1002',
+  },
+  AACBOM1003: {
+    consigneeCompany: 'Westline Logistics Pvt. Ltd.',
+    carrierAgentName: 'Alliance Air Cargo India Pvt. Ltd.',
+    agentCity: 'Mumbai',
+    iataCode: '14-3-7822',
+    carrierAccountNumber: 'AAC-BOM-1003',
+  },
+}
+
 const routeMap = {
   dashboard: { title:'Dashboard', icon:LayoutDashboard }, rates:{ title:'Rate calculator', icon:Calculator }, booking:{ title:'Book shipment', icon:Plus },
   shipments:{ title:'My shipments', icon:Box }, track:{ title:'Track AWB', icon:Search }, documents:{ title:'Documents', icon:FileText }, profile:{ title:'Company profile', icon:Building2 },
@@ -148,10 +173,129 @@ function RateCalculator({ toast }) {
 
 function Booking({ addShipment, toast }) {
   const selected=JSON.parse(localStorage.getItem('aac_selected_rate')||'null')
-  const [form,setForm]=useState({origin:selected?.origin||'DEL',destination:selected?.destination||'DXB',pieces:selected?.pieces||1,weight:selected?.charge||100,commodity:'General cargo',service:selected?.carrier||'Alliance Priority',pickup:'',shipper:'',consignee:'',instructions:''})
-  const update=e=>setForm({...form,[e.target.name]:e.target.value})
-  const submit=e=>{e.preventDefault();const awb=`AAC-${String(Date.now()).slice(-8)}`;const booking={awb,origin:form.origin,destination:form.destination,commodity:form.commodity,weight:+form.weight,status:'Booked',milestone:'Booking confirmed',eta:'Schedule pending',progress:15};addShipment(booking);api.post('/api/bookings',{...form,awb}).catch(()=>{});localStorage.removeItem('aac_selected_rate');toast(`Booking confirmed. AWB ${awb}`);go('shipments')}
-  return <div className="fade"><PageTitle eyebrow="New shipment" title="Create cargo booking" text="Capture shipment and party details. Your booking remains stored in this browser."/><form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1fr_.42fr]"><div className="space-y-6"><section className="card p-6"><h2 className="font-display font-semibold text-navy">Route & shipment</h2><div className="mt-5 grid gap-4 sm:grid-cols-2">{[['Origin','origin'],['Destination','destination']].map(([l,n])=><label key={n} className="field-label">{l} *<select name={n} className="field mt-2" value={form[n]} onChange={update}>{['DEL','BOM','BLR','MAA','CCU','DXB','FRA','LHR','SIN','HKG'].map(x=><option key={x}>{x}</option>)}</select></label>)}<label className="field-label">Commodity *<select name="commodity" className="field mt-2" value={form.commodity} onChange={update}>{['General cargo','Automotive parts','Electronics','Pharma supplies','Perishables','Garments','Documents'].map(x=><option key={x}>{x}</option>)}</select></label><label className="field-label">Service<select name="service" className="field mt-2" value={form.service} onChange={update}>{['Alliance Priority','Alliance Standard','Alliance Economy'].map(x=><option key={x}>{x}</option>)}</select></label><label className="field-label">Pieces *<input required min="1" type="number" name="pieces" className="field mt-2" value={form.pieces} onChange={update}/></label><label className="field-label">Chargeable weight (kg) *<input required min="1" type="number" name="weight" className="field mt-2" value={form.weight} onChange={update}/></label></div></section><section className="card p-6"><h2 className="font-display font-semibold text-navy">Parties & pickup</h2><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="field-label">Shipper company *<input required name="shipper" className="field mt-2" value={form.shipper} onChange={update}/></label><label className="field-label">Consignee company *<input required name="consignee" className="field mt-2" value={form.consignee} onChange={update}/></label><label className="field-label">Preferred pickup date<input type="date" name="pickup" className="field mt-2" value={form.pickup} onChange={update}/></label><label className="field-label">Special instructions<input name="instructions" className="field mt-2" value={form.instructions} onChange={update}/></label></div></section></div><aside className="card h-fit p-6"><h2 className="font-display font-semibold text-navy">Booking summary</h2><div className="mt-5 flex items-center justify-between rounded-xl bg-sky p-4"><span className="font-display text-xl font-semibold text-navy">{form.origin}</span><span className="flex items-center gap-2 text-brand"><span className="h-px w-7 bg-blue-300"/><Plane size={18}/><span className="h-px w-7 bg-blue-300"/></span><span className="font-display text-xl font-semibold text-navy">{form.destination}</span></div><dl className="mt-5 space-y-3 text-xs">{[['Service',form.service],['Pieces',form.pieces],['Chargeable weight',`${form.weight} kg`]].map(([a,b])=><div key={a} className="flex justify-between border-b border-slate-100 pb-3"><dt className="text-slate-400">{a}</dt><dd className="font-bold text-navy">{b}</dd></div>)}</dl><label className="mt-5 flex items-start gap-2 text-[10px] leading-4 text-slate-500"><input required type="checkbox" className="mt-0.5 accent-brand"/> I confirm the shipment details and accept cargo carriage terms.</label><button className="btn-primary mt-5 w-full"><PackageCheck size={17}/> Confirm booking</button></aside></form></div>
+  const [form,setForm]=useState({
+    origin:selected?.origin||'DEL', destination:selected?.destination||'DXB', pieces:selected?.pieces||1,
+    weight:selected?.charge||100, commodity:'General cargo', service:selected?.carrier||'Alliance Priority',
+    pickup:'', shipper:'', shipperAccount:'', consignee:'', consigneeAccount:'', instructions:'',
+    carrierAgentName:'', agentCity:'', iataCode:'', carrierAccountNumber:'',
+  })
+  const [lookup,setLookup]=useState({ status:'idle', message:'' })
+
+  const update=e=>{
+    const { name, value } = e.target
+    setForm(current => name === 'consigneeAccount'
+      ? { ...current, [name]:value, consignee:'', carrierAgentName:'', agentCity:'', iataCode:'', carrierAccountNumber:'' }
+      : { ...current, [name]:value })
+    if(name === 'consigneeAccount') setLookup({ status:'idle', message:'' })
+  }
+
+  useEffect(()=>{
+    const enteredAccount = form.consigneeAccount.trim()
+    const normalized = normalizeAgentAccount(enteredAccount)
+    if(!enteredAccount || normalized.length < 6) {
+      setLookup({ status:'idle', message:'' })
+      return
+    }
+
+    let cancelled = false
+    setLookup({ status:'loading', message:'Checking approved agent directory...' })
+    const timer = setTimeout(async()=>{
+      let details
+      try {
+        const result = await api.get(`/api/agents/lookup/${encodeURIComponent(enteredAccount)}`)
+        details = result?.agent
+      } catch {
+        details = demoAgentDirectory[normalized]
+      }
+      if(cancelled) return
+      if(details) {
+        setForm(current => normalizeAgentAccount(current.consigneeAccount) === normalized
+          ? { ...current, ...details }
+          : current)
+        setLookup({ status:'found', message:'Approved agent details fetched successfully.' })
+      } else {
+        setLookup({ status:'not-found', message:'No approved agent was found for this account number.' })
+      }
+    }, 450)
+
+    return()=>{ cancelled=true; clearTimeout(timer) }
+  },[form.consigneeAccount])
+
+  const submit=e=>{
+    e.preventDefault()
+    if(lookup.status !== 'found') return toast('Enter a valid consignee account number and wait for verification.')
+    const awb=`AAC-${String(Date.now()).slice(-8)}`
+    const booking={awb,origin:form.origin,destination:form.destination,commodity:form.commodity,weight:+form.weight,status:'Booked',milestone:'Booking confirmed',eta:'Schedule pending',progress:15}
+    addShipment(booking)
+    api.post('/api/bookings',{...form,awb}).catch(()=>{})
+    localStorage.removeItem('aac_selected_rate')
+    toast(`Booking confirmed. AWB ${awb}`)
+    go('shipments')
+  }
+
+  const lookupIcon = lookup.status === 'loading'
+    ? <LoaderCircle size={17} className="animate-spin text-brand"/>
+    : lookup.status === 'found'
+      ? <CheckCircle2 size={17} className="text-green-600"/>
+      : <Search size={17} className="text-slate-400"/>
+
+  return <div className="fade">
+    <PageTitle eyebrow="New shipment" title="Create cargo booking" text="Capture shipment, account and pickup details for your cargo booking."/>
+    <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1fr_.42fr]">
+      <div className="space-y-6">
+        <section className="card p-5 sm:p-6">
+          <h2 className="font-display font-semibold text-navy">Route & shipment</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {[['Origin','origin'],['Destination','destination']].map(([label,name])=><label key={name} className="field-label">{label} *<select name={name} className="field mt-2" value={form[name]} onChange={update}>{['DEL','BOM','BLR','MAA','CCU','DXB','FRA','LHR','SIN','HKG'].map(x=><option key={x}>{x}</option>)}</select></label>)}
+            <label className="field-label">Commodity *<select name="commodity" className="field mt-2" value={form.commodity} onChange={update}>{['General cargo','Automotive parts','Electronics','Pharma supplies','Perishables','Garments','Documents'].map(x=><option key={x}>{x}</option>)}</select></label>
+            <label className="field-label">Service<select name="service" className="field mt-2" value={form.service} onChange={update}>{['Alliance Priority','Alliance Standard','Alliance Economy'].map(x=><option key={x}>{x}</option>)}</select></label>
+            <label className="field-label">Pieces *<input required min="1" type="number" name="pieces" className="field mt-2" value={form.pieces} onChange={update}/></label>
+            <label className="field-label">Chargeable weight (kg) *<input required min="1" type="number" name="weight" className="field mt-2" value={form.weight} onChange={update}/></label>
+          </div>
+        </section>
+
+        <section className="card p-5 sm:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div><h2 className="font-display font-semibold text-navy">Parties & account lookup</h2><p className="mt-1 text-xs leading-5 text-slate-500">Consignee account verification fills the approved carrier details automatically.</p></div>
+            <button type="button" onClick={()=>setForm(current=>({...current,consigneeAccount:'66-9896496',consignee:'',carrierAgentName:'',agentCity:'',iataCode:'',carrierAccountNumber:''}))} className="w-fit text-xs font-bold text-brand hover:text-blue-800">Use demo: 66-9896496</button>
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="field-label">Shipper account number<input name="shipperAccount" autoComplete="off" className="field mt-2" value={form.shipperAccount} onChange={update} placeholder="Enter shipper account"/></label>
+            <label className="field-label">Consignee account number *<span className="relative mt-2 block"><input required name="consigneeAccount" autoComplete="off" className={`field pr-11 ${lookup.status==='found'?'border-green-300 focus:border-green-500 focus:ring-green-100':lookup.status==='not-found'?'border-red-300 focus:border-red-500 focus:ring-red-100':''}`} value={form.consigneeAccount} onChange={update} placeholder="e.g. 66-9896496"/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">{lookupIcon}</span></span></label>
+            <label className="field-label">Shipper company *<input required name="shipper" className="field mt-2" value={form.shipper} onChange={update}/></label>
+            <label className="field-label">Consignee company *<input required name="consignee" className="field mt-2" value={form.consignee} onChange={update}/></label>
+          </div>
+          {lookup.message&&<p role="status" className={`mt-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold ${lookup.status==='found'?'bg-green-50 text-green-700':lookup.status==='not-found'?'bg-red-50 text-red-700':'bg-blue-50 text-brand'}`}>{lookup.status==='loading'?<LoaderCircle size={15} className="animate-spin"/>:lookup.status==='found'?<CheckCircle2 size={15}/>:<Search size={15}/>} {lookup.message}</p>}
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="border-b border-blue-100 bg-sky p-5 sm:p-6">
+            <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-brand shadow-sm"><Building2 size={20}/></span><div><h2 className="font-display font-semibold text-navy">Carrier / Agent details</h2><p className="mt-1 text-xs leading-5 text-slate-500">These details are fetched securely from the approved account directory and cannot be edited in a booking.</p></div></div>
+          </div>
+          <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
+            <label className="field-label">Issuing carrier's agent name<input required readOnly className="field mt-2 bg-slate-50 text-slate-600" value={form.carrierAgentName} placeholder="Auto-filled after verification"/></label>
+            <label className="field-label">City<input required readOnly className="field mt-2 bg-slate-50 text-slate-600" value={form.agentCity} placeholder="Auto-filled after verification"/></label>
+            <label className="field-label">Agent's IATA code<input required readOnly className="field mt-2 bg-slate-50 font-semibold text-slate-600" value={form.iataCode} placeholder="Auto-filled after verification"/></label>
+            <label className="field-label">Account number<input required readOnly className="field mt-2 bg-slate-50 font-semibold text-slate-600" value={form.carrierAccountNumber} placeholder="Auto-filled after verification"/></label>
+          </div>
+        </section>
+
+        <section className="card p-5 sm:p-6">
+          <h2 className="font-display font-semibold text-navy">Pickup instructions</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="field-label">Preferred pickup date<input type="date" name="pickup" className="field mt-2" value={form.pickup} onChange={update}/></label><label className="field-label">Special instructions<input name="instructions" className="field mt-2" value={form.instructions} onChange={update}/></label></div>
+        </section>
+      </div>
+
+      <aside className="card h-fit p-5 sm:p-6 xl:sticky xl:top-28">
+        <h2 className="font-display font-semibold text-navy">Booking summary</h2>
+        <div className="mt-5 flex items-center justify-between rounded-xl bg-sky p-4"><span className="font-display text-xl font-semibold text-navy">{form.origin}</span><span className="flex items-center gap-2 text-brand"><span className="h-px w-7 bg-blue-300"/><Plane size={18}/><span className="h-px w-7 bg-blue-300"/></span><span className="font-display text-xl font-semibold text-navy">{form.destination}</span></div>
+        <dl className="mt-5 space-y-3 text-xs">{[['Service',form.service],['Pieces',form.pieces],['Chargeable weight',`${form.weight} kg`],['Consignee account',form.carrierAccountNumber||'Not verified'],['Issuing agent',form.carrierAgentName||'Not verified']].map(([label,value])=><div key={label} className="flex gap-3 justify-between border-b border-slate-100 pb-3"><dt className="text-slate-400">{label}</dt><dd className="max-w-[58%] text-right font-bold text-navy">{value}</dd></div>)}</dl>
+        <label className="mt-5 flex items-start gap-2 text-[10px] leading-4 text-slate-500"><input required type="checkbox" className="mt-0.5 accent-brand"/> I confirm the shipment details and accept cargo carriage terms.</label>
+        <button className="btn-primary mt-5 w-full" disabled={lookup.status!=='found'}><PackageCheck size={17}/> Confirm booking</button>
+        {lookup.status!=='found'&&<p className="mt-3 text-center text-[10px] leading-4 text-slate-400">Verify the consignee account to enable booking.</p>}
+      </aside>
+    </form>
+  </div>
 }
 
 function ShipmentTable({ shipments, compact=false }) {
