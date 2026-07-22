@@ -60,7 +60,7 @@ const requireDatabase = () => {
 }
 const cleanObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 const publicAccount = account => {
-  const { password, passwordHash, ...safe } = cleanObject(account)
+  const { password, passwordHash, otp, ...safe } = cleanObject(account)
   return safe
 }
 
@@ -85,6 +85,28 @@ const schemaSql = `
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS wallet_accounts (
+        owner_email TEXT PRIMARY KEY,
+        owner_name TEXT NOT NULL DEFAULT '',
+        business_name TEXT NOT NULL DEFAULT '',
+        balance NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+        status TEXT NOT NULL DEFAULT 'Active',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id TEXT PRIMARY KEY,
+        owner_email TEXT NOT NULL REFERENCES wallet_accounts(owner_email) ON DELETE CASCADE,
+        direction TEXT NOT NULL CHECK (direction IN ('credit', 'debit')),
+        type TEXT NOT NULL,
+        amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+        reference TEXT,
+        note TEXT,
+        balance_after NUMERIC(14, 2) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS wallet_transactions_owner_created_idx
+        ON wallet_transactions (owner_email, created_at DESC);
       CREATE TABLE IF NOT EXISTS admin_state (
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL,
@@ -154,6 +176,94 @@ const defaultChargeControls = {
 }
 
 const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback
+const money = value => Number(Number(value || 0).toFixed(2))
+const walletSeedFor = email => email === 'agent@alliancecargo.in' ? 84200 : 0
+const walletJson = row => ({
+  email: row.owner_email,
+  ownerName: row.owner_name,
+  businessName: row.business_name,
+  balance: money(row.balance),
+  status: row.status,
+  updatedAt: row.updated_at,
+})
+const transactionJson = row => ({
+  id: row.id,
+  email: row.owner_email,
+  direction: row.direction,
+  type: row.type,
+  amount: money(row.amount),
+  reference: row.reference,
+  note: row.note,
+  balanceAfter: money(row.balance_after),
+  createdAt: row.created_at,
+})
+
+async function ensureWallet(db, email, profile = {}) {
+  const result = await db.query(
+    `INSERT INTO wallet_accounts (owner_email, owner_name, business_name, balance)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (owner_email) DO UPDATE SET
+       owner_name = CASE WHEN EXCLUDED.owner_name <> '' THEN EXCLUDED.owner_name ELSE wallet_accounts.owner_name END,
+       business_name = CASE WHEN EXCLUDED.business_name <> '' THEN EXCLUDED.business_name ELSE wallet_accounts.business_name END,
+       updated_at = NOW()
+     RETURNING *`,
+    [email, String(profile.name || ''), String(profile.business || ''), walletSeedFor(email)],
+  )
+  return result.rows[0]
+}
+
+async function loadChargeControls(db = pool) {
+  const memoryProfile = Array.isArray(memoryAdminState.charges)
+    ? cleanObject(memoryAdminState.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
+    : cleanObject(memoryAdminState.chargeControls)
+  let controls = { ...defaultChargeControls, ...memoryProfile }
+  if (db && databaseStatus === 'connected') {
+    const result = await db.query(`SELECT key, value FROM admin_state WHERE key IN ('chargeControls', 'charges')`)
+    const saved = Object.fromEntries(result.rows.map(row => [row.key, row.value]))
+    const chargeProfile = Array.isArray(saved.charges)
+      ? cleanObject(saved.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
+      : cleanObject(saved.chargeControls)
+    controls = { ...controls, ...chargeProfile }
+  }
+  return controls
+}
+
+async function calculateFreightDetails(data, db = pool) {
+  const controls = await loadChargeControls(db)
+  const pieces = Math.max(1, numberOr(data.pieces, 1))
+  const actualWeight = Math.max(0, numberOr(data.actualWeight || data.weight, 0))
+  const length = Math.max(0, numberOr(data.length, 0))
+  const width = Math.max(0, numberOr(data.width, 0))
+  const height = Math.max(0, numberOr(data.height, 0))
+  const divisor = Math.max(1, numberOr(controls.volumetricDivisor, defaultChargeControls.volumetricDivisor))
+  const volumetricWeight = (length * width * height * pieces) / divisor
+  const chargeableWeight = Math.max(
+    numberOr(controls.minimumChargeableWeight, defaultChargeControls.minimumChargeableWeight),
+    Math.ceil(Math.max(actualWeight, volumetricWeight)),
+  )
+  const services = Array.isArray(data.extraServices) ? data.extraServices : []
+  const chargeRows = [
+    { key: 'baseFreight', label: 'Base freight', detail: `₹${numberOr(controls.baseRatePerKg, 45).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.baseRatePerKg, 45) * chargeableWeight },
+    { key: 'sectorSurcharge', label: 'Sector surcharge', amount: numberOr(controls.sectorSurcharge, 0) },
+    { key: 'flightSurcharge', label: 'Flight surcharge', amount: numberOr(controls.flightSurcharge, 0) },
+    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, amount: numberOr(controls.commoditySurcharge, 0) },
+    { key: 'originStationCharge', label: `${String(data.origin || 'Origin')} station charges`, amount: numberOr(controls.originStationCharge, 0) },
+    { key: 'xrayCharges', label: 'X-ray screening charges', detail: `₹${numberOr(controls.xrayRatePerKg, 1).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.xrayRatePerKg, 1) * chargeableWeight },
+    { key: 'destinationStationCharge', label: `${String(data.destination || 'Destination')} station charges`, amount: numberOr(controls.destinationStationCharge, 0) },
+  ]
+  if (services.includes('handleWithCare')) chargeRows.push({ key: 'handleWithCare', label: 'Handle with care', amount: numberOr(controls.handleWithCareCharge, 0) })
+  if (services.includes('priorityHandling')) chargeRows.push({ key: 'priorityHandling', label: 'Priority handling', amount: numberOr(controls.priorityHandlingCharge, 0) })
+  if (services.includes('temperatureControl')) chargeRows.push({ key: 'temperatureControl', label: 'Temperature control', amount: numberOr(controls.temperatureControlCharge, 0) })
+  const charges = chargeRows.map(row => ({ ...row, amount: money(row.amount) }))
+  return {
+    weights: { totalActualWeight: money(actualWeight), totalVolumetricWeight: money(volumetricWeight), chargeableWeight: money(chargeableWeight) },
+    charges,
+    total: money(charges.reduce((sum, row) => sum + row.amount, 0)),
+    controls,
+    pricingSource: 'super-admin',
+    flights: flightOptionsFor(String(data.origin || 'DEL'), String(data.destination || 'DXB'), data.bookingDate),
+  }
+}
 const flightOptionsFor = (origin, destination, bookingDate) => {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(bookingDate || '')) ? bookingDate : new Date().toISOString().slice(0, 10)
   const routeCode = `${origin}${destination}`
@@ -237,6 +347,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   if (requestedRole && requestedRole !== user.role) return response.status(403).json({ message: 'Account role does not match this portal' })
 
   const safeUser = { ...publicAccount(user), email }
+  if (pool && user.role === 'agent') await ensureWallet(pool, email, safeUser)
   issueSession(response, safeUser)
   response.json({ user: safeUser })
 }))
@@ -260,6 +371,7 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, data = EXCLUDED.data, updated_at = NOW()`,
     [id, email, passwordHash, record],
   )
+  await ensureWallet(requireDatabase(), email, record)
   response.status(201).json({ account: record })
 }))
 
@@ -288,58 +400,7 @@ app.post('/api/rates/quote', (request, response) => {
 
 app.post('/api/freight/calculate', authenticate, asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
-  const memoryProfile = Array.isArray(memoryAdminState.charges)
-    ? cleanObject(memoryAdminState.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
-    : cleanObject(memoryAdminState.chargeControls)
-  let controls = { ...defaultChargeControls, ...memoryProfile }
-  if (pool && databaseStatus === 'connected') {
-    const result = await pool.query(`SELECT key, value FROM admin_state WHERE key IN ('chargeControls', 'charges')`)
-    const saved = Object.fromEntries(result.rows.map(row => [row.key, row.value]))
-    const chargeProfile = Array.isArray(saved.charges)
-      ? cleanObject(saved.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
-      : cleanObject(saved.chargeControls)
-    controls = { ...controls, ...chargeProfile }
-  }
-
-  const pieces = Math.max(1, numberOr(data.pieces, 1))
-  const actualWeight = Math.max(0, numberOr(data.actualWeight || data.weight, 0))
-  const length = Math.max(0, numberOr(data.length, 0))
-  const width = Math.max(0, numberOr(data.width, 0))
-  const height = Math.max(0, numberOr(data.height, 0))
-  const divisor = Math.max(1, numberOr(controls.volumetricDivisor, defaultChargeControls.volumetricDivisor))
-  const volumetricWeight = (length * width * height * pieces) / divisor
-  const chargeableWeight = Math.max(
-    numberOr(controls.minimumChargeableWeight, defaultChargeControls.minimumChargeableWeight),
-    Math.ceil(Math.max(actualWeight, volumetricWeight)),
-  )
-  const services = Array.isArray(data.extraServices) ? data.extraServices : []
-  const chargeRows = [
-    { key: 'baseFreight', label: 'Base freight', detail: `₹${numberOr(controls.baseRatePerKg, 45).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.baseRatePerKg, 45) * chargeableWeight },
-    { key: 'sectorSurcharge', label: 'Sector surcharge', amount: numberOr(controls.sectorSurcharge, 0) },
-    { key: 'flightSurcharge', label: 'Flight surcharge', amount: numberOr(controls.flightSurcharge, 0) },
-    { key: 'commoditySurcharge', label: `${String(data.commodity || 'Cargo')} surcharge`, amount: numberOr(controls.commoditySurcharge, 0) },
-    { key: 'originStationCharge', label: `${String(data.origin || 'Origin')} station charges`, amount: numberOr(controls.originStationCharge, 0) },
-    { key: 'xrayCharges', label: 'X-ray screening charges', detail: `₹${numberOr(controls.xrayRatePerKg, 1).toFixed(2)} × ${chargeableWeight.toFixed(2)} kg`, amount: numberOr(controls.xrayRatePerKg, 1) * chargeableWeight },
-    { key: 'destinationStationCharge', label: `${String(data.destination || 'Destination')} station charges`, amount: numberOr(controls.destinationStationCharge, 0) },
-  ]
-  if (services.includes('handleWithCare')) chargeRows.push({ key: 'handleWithCare', label: 'Handle with care', amount: numberOr(controls.handleWithCareCharge, 0) })
-  if (services.includes('priorityHandling')) chargeRows.push({ key: 'priorityHandling', label: 'Priority handling', amount: numberOr(controls.priorityHandlingCharge, 0) })
-  if (services.includes('temperatureControl')) chargeRows.push({ key: 'temperatureControl', label: 'Temperature control', amount: numberOr(controls.temperatureControlCharge, 0) })
-
-  const charges = chargeRows.map(row => ({ ...row, amount: Number(row.amount.toFixed(2)) }))
-  const total = Number(charges.reduce((sum, row) => sum + row.amount, 0).toFixed(2))
-  response.json({
-    weights: {
-      totalActualWeight: Number(actualWeight.toFixed(2)),
-      totalVolumetricWeight: Number(volumetricWeight.toFixed(2)),
-      chargeableWeight: Number(chargeableWeight.toFixed(2)),
-    },
-    charges,
-    total,
-    controls,
-    pricingSource: 'super-admin',
-    flights: flightOptionsFor(String(data.origin || 'DEL'), String(data.destination || 'DXB'), data.bookingDate),
-  })
+  response.json(await calculateFreightDetails(data))
 }))
 
 app.get('/api/agents/lookup/:accountNumber', authenticate, asyncRoute(async (request, response) => {
@@ -379,7 +440,50 @@ app.get('/api/agents/lookup/:accountNumber', authenticate, asyncRoute(async (req
   response.json({ agent })
 }))
 
-app.post('/api/bookings', authenticate, asyncRoute(async (request, response) => {
+app.get('/api/wallet', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const db = requireDatabase()
+  const account = await ensureWallet(db, request.user.sub, { name: request.user.name })
+  const transactions = await db.query(
+    `SELECT * FROM wallet_transactions WHERE owner_email = $1 ORDER BY created_at DESC LIMIT 100`,
+    [request.user.sub],
+  )
+  response.json({ wallet: walletJson(account), transactions: transactions.rows.map(transactionJson) })
+}))
+
+app.post('/api/wallet/top-up', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+  const amount = money(request.body?.amount)
+  const method = String(request.body?.method || 'UPI').trim()
+  if (amount < 100 || amount > 500000) return response.status(400).json({ message: 'Top-up amount must be between ₹100 and ₹5,00,000' })
+  if (!['UPI', 'Bank transfer', 'Debit card'].includes(method)) return response.status(400).json({ message: 'Select a valid payment method' })
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    await ensureWallet(client, request.user.sub, { name: request.user.name })
+    const locked = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [request.user.sub])
+    if (locked.rows[0].status !== 'Active') throw Object.assign(new Error('Wallet is frozen. Contact support before adding money.'), { status: 403 })
+    const balanceAfter = money(Number(locked.rows[0].balance) + amount)
+    const transactionId = `WTX-${crypto.randomUUID().slice(0, 10).toUpperCase()}`
+    const reference = `TOPUP-${Date.now().toString(36).toUpperCase()}`
+    const updated = await client.query(
+      `UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
+      [request.user.sub, balanceAfter],
+    )
+    const transaction = await client.query(
+      `INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after)
+       VALUES ($1, $2, 'credit', 'Wallet top-up', $3, $4, $5, $6) RETURNING *`,
+      [transactionId, request.user.sub, amount, reference, `${method} top-up`, balanceAfter],
+    )
+    await client.query('COMMIT')
+    response.status(201).json({ wallet: walletJson(updated.rows[0]), transaction: transactionJson(transaction.rows[0]) })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}))
+
+app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
   const selectedFlight = cleanObject(data.selectedFlight)
   const pickupDate = String(data.pickup || '')
@@ -387,13 +491,57 @@ app.post('/api/bookings', authenticate, asyncRoute(async (request, response) => 
   if (!pickupDate || !flightDate) return response.status(400).json({ message: 'Pickup date and selected flight date are required' })
   if (pickupDate > flightDate) return response.status(400).json({ message: 'Pickup date cannot be after the selected flight date' })
   const awb = String(data.awb || `AAC-${Date.now().toString().slice(-8)}`)
-  const record = { ...data, awb, status: data.status || 'Booked', milestone: data.milestone || 'Booking confirmed', progress: Number(data.progress || 15) }
-  await requireDatabase().query(
-    `INSERT INTO cargo_bookings (awb, owner_email, data) VALUES ($1, $2, $3)
-     ON CONFLICT (awb) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-    [awb, request.user.sub, record],
-  )
-  response.status(201).json({ booking: record })
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    const duplicate = await client.query('SELECT awb FROM cargo_bookings WHERE awb = $1 FOR UPDATE', [awb])
+    if (duplicate.rowCount) throw Object.assign(new Error('This booking has already been confirmed'), { status: 409 })
+    const freightSummary = await calculateFreightDetails(data, client)
+    const bookingAmount = money(freightSummary.total)
+    await ensureWallet(client, request.user.sub, { name: request.user.name, business: data.shipper })
+    const locked = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [request.user.sub])
+    const account = locked.rows[0]
+    if (account.status !== 'Active') throw Object.assign(new Error('Wallet is frozen. Contact support before booking.'), { status: 403 })
+    if (Number(account.balance) < bookingAmount) {
+      throw Object.assign(new Error(`Insufficient wallet balance. Add ₹${money(bookingAmount - Number(account.balance)).toLocaleString('en-IN')} to confirm this shipment.`), { status: 402 })
+    }
+    const balanceAfter = money(Number(account.balance) - bookingAmount)
+    const transactionId = `WTX-${crypto.randomUUID().slice(0, 10).toUpperCase()}`
+    const record = {
+      ...data,
+      id: awb,
+      awb,
+      ownerEmail: request.user.sub,
+      agent: data.shipper || request.user.name,
+      route: `${data.origin || ''} → ${data.destination || ''}`,
+      status: data.status || 'Booked',
+      milestone: data.milestone || 'Booking confirmed',
+      progress: Number(data.progress || 15),
+      payment: 'Wallet paid',
+      amount: `₹${bookingAmount.toLocaleString('en-IN')}`,
+      total: bookingAmount,
+      freightSummary,
+      walletTransactionId: transactionId,
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    }
+    await client.query('INSERT INTO cargo_bookings (awb, owner_email, data) VALUES ($1, $2, $3)', [awb, request.user.sub, record])
+    const updated = await client.query(
+      `UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
+      [request.user.sub, balanceAfter],
+    )
+    const transaction = await client.query(
+      `INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after)
+       VALUES ($1, $2, 'debit', 'Shipment booking', $3, $4, $5, $6) RETURNING *`,
+      [transactionId, request.user.sub, bookingAmount, awb, `${data.origin || ''} → ${data.destination || ''} · ${selectedFlight.flightNumber || 'Selected flight'}`, balanceAfter],
+    )
+    await client.query('COMMIT')
+    response.status(201).json({ booking: record, wallet: walletJson(updated.rows[0]), transaction: transactionJson(transaction.rows[0]) })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }))
 
 app.get('/api/shipments', authenticate, asyncRoute(async (request, response) => {
@@ -408,15 +556,70 @@ app.get('/api/shipments', authenticate, asyncRoute(async (request, response) => 
 app.get('/api/admin/bootstrap', authenticate, requireRole('superadmin'), asyncRoute(async (_request, response) => {
   if (!pool || databaseStatus !== 'connected') return response.json(memoryAdminState)
   const db = requireDatabase()
-  const [stateResult, agentsResult, bookingsResult] = await Promise.all([
+  await ensureWallet(db, 'agent@alliancecargo.in', { name: 'Demo Agent', business: 'Northstar Exports' })
+  const [stateResult, agentsResult, bookingsResult, walletsResult, transactionsResult] = await Promise.all([
     db.query('SELECT key, value FROM admin_state'),
     db.query('SELECT data FROM agent_registrations ORDER BY created_at DESC'),
     db.query('SELECT data FROM cargo_bookings ORDER BY created_at DESC'),
+    db.query('SELECT * FROM wallet_accounts ORDER BY updated_at DESC'),
+    db.query('SELECT * FROM wallet_transactions ORDER BY created_at DESC LIMIT 250'),
   ])
   const state = Object.fromEntries(stateResult.rows.map(row => [row.key, row.value]))
   if (agentsResult.rowCount) state.agents = agentsResult.rows.map(row => row.data)
   if (bookingsResult.rowCount) state.bookings = bookingsResult.rows.map(row => row.data)
+  state.wallets = walletsResult.rows.map(walletJson)
+  state.walletTransactions = transactionsResult.rows.map(transactionJson)
   response.json(state)
+}))
+
+app.post('/api/admin/wallets/:email/adjust', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
+  const email = String(request.params.email || '').trim().toLowerCase()
+  const direction = String(request.body?.direction || '').toLowerCase()
+  const amount = money(request.body?.amount)
+  const note = String(request.body?.note || '').trim().slice(0, 240)
+  if (!/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({ message: 'A valid wallet email is required' })
+  if (!['credit', 'debit'].includes(direction)) return response.status(400).json({ message: 'Adjustment must be credit or debit' })
+  if (amount <= 0 || amount > 1000000) return response.status(400).json({ message: 'Adjustment amount must be between ₹1 and ₹10,00,000' })
+  if (note.length < 3) return response.status(400).json({ message: 'Enter a reason for this wallet adjustment' })
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    await ensureWallet(client, email)
+    const locked = await client.query('SELECT * FROM wallet_accounts WHERE owner_email = $1 FOR UPDATE', [email])
+    const currentBalance = Number(locked.rows[0].balance)
+    if (direction === 'debit' && currentBalance < amount) throw Object.assign(new Error('Debit cannot exceed the available wallet balance'), { status: 400 })
+    const balanceAfter = money(currentBalance + (direction === 'credit' ? amount : -amount))
+    const transactionId = `WTX-${crypto.randomUUID().slice(0, 10).toUpperCase()}`
+    const reference = `ADMIN-${Date.now().toString(36).toUpperCase()}`
+    const updated = await client.query(
+      `UPDATE wallet_accounts SET balance = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
+      [email, balanceAfter],
+    )
+    const transaction = await client.query(
+      `INSERT INTO wallet_transactions (id, owner_email, direction, type, amount, reference, note, balance_after)
+       VALUES ($1, $2, $3, 'Admin adjustment', $4, $5, $6, $7) RETURNING *`,
+      [transactionId, email, direction, amount, reference, note, balanceAfter],
+    )
+    await client.query('COMMIT')
+    response.json({ wallet: walletJson(updated.rows[0]), transaction: transactionJson(transaction.rows[0]) })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}))
+
+app.patch('/api/admin/wallets/:email/status', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
+  const email = String(request.params.email || '').trim().toLowerCase()
+  const status = String(request.body?.status || '')
+  if (!['Active', 'Frozen'].includes(status)) return response.status(400).json({ message: 'Wallet status must be Active or Frozen' })
+  await ensureWallet(requireDatabase(), email)
+  const result = await requireDatabase().query(
+    `UPDATE wallet_accounts SET status = $2, updated_at = NOW() WHERE owner_email = $1 RETURNING *`,
+    [email, status],
+  )
+  response.json({ wallet: walletJson(result.rows[0]) })
 }))
 
 app.patch('/api/admin/state', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
