@@ -273,7 +273,7 @@ const agentApprovalNotification = account => {
     sent: agent.submittedAt || new Date().toISOString(),
     createdAt: agent.submittedAt || new Date().toISOString(),
     status: 'Unread',
-    route: 'agents',
+    route: 'users',
   }
 }
 
@@ -881,6 +881,49 @@ app.get('/api/admin/bootstrap', authenticate, requireRole('superadmin'), asyncRo
   state.wallets = walletsResult.rows.map(walletJson)
   state.walletTransactions = transactionsResult.rows.map(transactionJson)
   response.json(state)
+}))
+
+app.patch('/api/admin/agents/approve-all', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    const pending = await client.query(
+      `SELECT id AS row_id, email, data
+       FROM agent_registrations
+       WHERE LOWER(COALESCE(data->>'status', 'pending')) = 'pending'
+       ORDER BY created_at
+       FOR UPDATE`,
+    )
+    const approved = []
+    for (const row of pending.rows) {
+      const current = cleanObject(row.data)
+      const stationValue = String(current.station || 'DEL')
+      const stationCode = stationValue.split(/[â€”â€“-]/)[0].trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'DEL'
+      const suffix = String(row.row_id).replace(/[^A-Z0-9]/gi, '').slice(-4).toUpperCase().padStart(4, '0')
+      const nextData = {
+        ...current,
+        accountNumber: current.accountNumber && current.accountNumber !== 'Assigned after approval' ? current.accountNumber : `AAC-${stationCode}-${suffix}`,
+        agentName: current.agentName || 'Alliance Air Cargo India Pvt. Ltd.',
+        carrierAgentName: current.carrierAgentName || current.agentName || 'Alliance Air Cargo India Pvt. Ltd.',
+        iataCode: current.iataCode && current.iataCode !== 'Assigned after approval' ? current.iataCode : `14-3-${suffix}`,
+        documents: 'Verified',
+        status: 'Active',
+        approvedAt: new Date().toISOString(),
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: request.user.sub,
+      }
+      const updated = await client.query('UPDATE agent_registrations SET data = $2, updated_at = NOW() WHERE id = $1 RETURNING email, data', [row.row_id, nextData])
+      await ensureWallet(client, updated.rows[0].email, nextData)
+      approved.push(agentAdminJson(updated.rows[0].data))
+    }
+    await client.query('COMMIT')
+    response.json({ agents: approved, count: approved.length, message: `${approved.length} pending client account${approved.length === 1 ? '' : 's'} approved` })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }))
 
 app.patch('/api/admin/agents/:id/status', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
