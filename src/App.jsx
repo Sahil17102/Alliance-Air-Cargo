@@ -12,8 +12,8 @@ const CLIENT_PORTAL_URL = import.meta.env.VITE_CLIENT_PORTAL_URL || 'http://127.
 const portalLink = (route = 'login') => `${CLIENT_PORTAL_URL}/#/${route}`
 
 const navItems = [
-  ['Home', '#home'], ['Services', '#services'], ['Track', '#tracking'],
-  ['Schedule', '#network'], ['About', '#about'], ['Contact', '#contact'],
+  ['Home', '#/home', 'home'], ['Services', '#/services', 'services'], ['Track', '#/track', 'track'],
+  ['Schedule', '#/schedule', 'schedule'], ['About', '#/about', 'about'], ['Contact', '#/contact', 'contact'],
 ]
 
 const services = [
@@ -41,7 +41,7 @@ const faqs = [
 
 function Logo({ light = false }) {
   return (
-    <a href="#home" aria-label="Alliance Air Cargo home" className="group flex shrink-0 items-center gap-3">
+    <a href="#/home" aria-label="Alliance Air Cargo home" className="group flex shrink-0 items-center gap-3">
       <span className="relative grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-brand text-white shadow-[0_8px_20px_rgba(15,98,254,.22)]">
         <svg viewBox="0 0 48 48" className="h-8 w-8" aria-hidden="true">
           <path d="M8 30.5 24.7 12l15.6 3.6-14.8 6.6-5.4 12.9-3.8-8.9-8.3 4.3Z" fill="currentColor" />
@@ -68,7 +68,7 @@ function SectionHeading({ eyebrow, title, text, center = false }) {
   )
 }
 
-function Header() {
+function Header({ route }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     document.body.classList.toggle('menu-open', open)
@@ -91,11 +91,11 @@ function Header() {
         <div className="container-site flex h-[74px] items-center justify-between">
           <Logo />
           <nav aria-label="Main navigation" className="hidden items-center gap-7 lg:flex">
-            {navItems.map(([label, href]) => <a key={href} className="text-[13px] font-semibold text-slate-600 transition-colors hover:text-brand" href={href}>{label}</a>)}
+            {navItems.map(([label, href, key]) => <a key={href} aria-current={route===key?'page':undefined} className={`relative py-2 text-[13px] font-semibold transition-colors after:absolute after:inset-x-0 after:-bottom-1 after:h-0.5 after:origin-left after:rounded-full after:bg-brand after:transition-transform ${route===key?'text-brand after:scale-x-100':'text-slate-600 after:scale-x-0 hover:text-brand hover:after:scale-x-100'}`} href={href}>{label}</a>)}
           </nav>
           <div className="hidden items-center gap-3 lg:flex">
             <a href={portalLink('login')} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-navy transition hover:bg-slate-100">Client Login</a>
-            <a href="#quote" className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_22px_rgba(15,98,254,.2)] transition hover:bg-blue-700">Get a Quote <ArrowRight size={15} /></a>
+            <a href="#/contact" className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_22px_rgba(15,98,254,.2)] transition hover:bg-blue-700">Get a Quote <ArrowRight size={15} /></a>
           </div>
           <button onClick={() => setOpen(true)} aria-label="Open navigation menu" className="grid h-11 w-11 place-items-center rounded-lg border border-slate-200 text-navy lg:hidden"><Menu /></button>
         </div>
@@ -104,12 +104,12 @@ function Header() {
         <aside aria-label="Mobile navigation" onClick={e => e.stopPropagation()} className={`ml-auto flex h-full w-[min(88%,380px)] flex-col bg-white p-6 shadow-2xl transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="flex items-center justify-between"><Logo /><button onClick={() => setOpen(false)} aria-label="Close menu" className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100"><X size={20} /></button></div>
           <nav className="mt-10 flex flex-col">
-            {navItems.map(([label, href]) => <a key={href} onClick={() => setOpen(false)} href={href} className="flex items-center justify-between border-b border-slate-100 py-4 font-semibold text-navy">{label}<ChevronRight size={17} className="text-slate-400" /></a>)}
+            {navItems.map(([label, href, key]) => <a key={href} aria-current={route===key?'page':undefined} onClick={() => setOpen(false)} href={href} className={`flex items-center justify-between border-b border-slate-100 py-4 font-semibold ${route===key?'text-brand':'text-navy'}`}>{label}<ChevronRight size={17} className="text-slate-400" /></a>)}
           </nav>
           <div className="mt-auto space-y-3">
             <a href="tel:+919810080808" className="flex items-center gap-3 rounded-xl bg-sky p-4 text-sm font-semibold text-navy"><Phone size={18} className="text-brand" /> +91 98100 80808</a>
             <a href={portalLink('login')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 px-5 py-3 font-semibold text-brand">Client Login</a>
-            <a href="#quote" onClick={() => setOpen(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3.5 font-semibold text-white">Get a Quote <ArrowRight size={17} /></a>
+            <a href="#/contact" onClick={() => setOpen(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3.5 font-semibold text-white">Get a Quote <ArrowRight size={17} /></a>
           </div>
         </aside>
       </div>
@@ -340,12 +340,63 @@ function QuoteContact() {
   )
 }
 
+function PageHero({ eyebrow, title, text, image, imageAlt, children }) {
+  return (
+    <section className="overflow-hidden bg-sky py-7 sm:py-10 lg:py-14">
+      <div className="container-site grid overflow-hidden rounded-[28px] border border-blue-100 bg-white shadow-soft lg:min-h-[460px] lg:grid-cols-[.92fr_1.08fr]">
+        <div className="flex flex-col justify-center p-7 sm:p-11 lg:p-14">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.18em] text-brand"><span className="h-px w-7 bg-gold"/>{eyebrow}</div>
+          <h1 className="font-display mt-5 text-4xl font-semibold leading-[1.08] tracking-[-.045em] text-navy sm:text-5xl">{title}</h1>
+          <p className="mt-5 max-w-xl text-[15px] leading-7 text-slate-600">{text}</p>
+          {children&&<div className="mt-7 flex flex-wrap gap-3">{children}</div>}
+        </div>
+        <div className="relative min-h-[340px] lg:min-h-full">
+          <img src={image} alt={imageAlt} width="1400" height="933" decoding="async" fetchPriority="high" className="absolute inset-0 h-full w-full object-cover"/>
+          <div className="absolute inset-0 bg-gradient-to-t from-navy/45 via-transparent to-transparent"/>
+          <div className="absolute bottom-6 left-6 rounded-xl border border-white/30 bg-white/90 px-4 py-3 text-[11px] font-bold text-navy shadow-lg backdrop-blur"><span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500"/>Alliance operations network</div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PageCta({ title, text }) {
+  return <section className="bg-white pb-16 sm:pb-20"><div className="container-site flex flex-col items-start justify-between gap-6 rounded-[26px] bg-navy p-7 text-white sm:p-10 lg:flex-row lg:items-center"><div><h2 className="font-display text-2xl font-semibold sm:text-3xl">{title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/75">{text}</p></div><div className="flex shrink-0 flex-wrap gap-3"><a href={portalLink('booking')} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold">Book cargo <ArrowRight size={16}/></a><a href="#/contact" className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-5 py-3.5 text-sm font-bold">Talk to us <Phone size={15}/></a></div></div></section>
+}
+
+function ServicesPage() {
+  const steps = [['01','Share shipment details','Tell us the route, commodity, dimensions, weight and required delivery date.'],['02','Receive the right routing','Our cargo desk checks capacity, handling needs, cut-offs and practical alternatives.'],['03','Confirm and prepare','We coordinate booking, documentation, pickup and cargo acceptance.'],['04','Move with visibility','Milestone updates keep your team informed through uplift and delivery.']]
+  return <><PageHero eyebrow="Cargo services" title="Air freight built around your shipment." text="From urgent documents to complex commercial cargo, Alliance combines airline access, careful handling and one accountable operations team." image="/images/warehouse-team.jpg" imageAlt="Cargo professionals preparing freight inside a logistics warehouse"><a href={portalLink('booking')} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold text-white">Book a shipment <ArrowRight size={16}/></a><a href="#/contact" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 text-sm font-bold text-navy">Request pricing</a></PageHero><Services/><section className="section-pad bg-mist"><div className="container-site"><SectionHeading eyebrow="How it works" title="A clear process from enquiry to delivery." text="Simple hand-offs, practical communication and documented cargo handling at every important stage."/><div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{steps.map(([n,t,d])=><article key={n} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card"><span className="font-display text-3xl font-semibold text-blue-200">{n}</span><h3 className="font-display mt-5 text-lg font-semibold text-navy">{t}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{d}</p></article>)}</div></div></section><Fleet/><PageCta title="Need a service matched to your cargo?" text="Speak with a cargo specialist for routing, acceptance and handling guidance before you book."/></>
+}
+
+function TrackPage() {
+  const [awb,setAwb]=useState('125-98765432')
+  const [lookedUp,setLookedUp]=useState(false)
+  const milestones=[['Booking confirmed','Shipment details and space request accepted.'],['Cargo received','Freight checked at the origin cargo terminal.'],['Security & customs','Required screening and export formalities completed.'],['Flight departed','Cargo uplifted from Delhi on the booked routing.'],['Destination handling','Arrival, import processing and release coordination.']]
+  const submit=e=>{e.preventDefault();if(awb.trim().length>=6)setLookedUp(true)}
+  return <><PageHero eyebrow="Shipment visibility" title="Track air cargo with confidence." text="Follow the journey from booking and cargo acceptance through flight departure, arrival and final delivery coordination." image="/images/cargo-flight.jpg" imageAlt="Cargo aircraft flying on an international route"><a href="#page-track-form" onClick={e=>{e.preventDefault();document.getElementById('page-track-form')?.scrollIntoView({behavior:'smooth'})}} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold text-white">Track an AWB <Search size={16}/></a><a href={portalLink('track')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 text-sm font-bold text-navy">Open client tracking</a></PageHero><section id="page-track-form" className="section-pad bg-white"><div className="container-site grid gap-8 lg:grid-cols-[.82fr_1.18fr]"><div><SectionHeading eyebrow="Live status" title="Enter your air waybill number." text="Use the complete AWB shown on your booking confirmation. Demo tracking is available with 125-98765432."/><div className="mt-7 rounded-2xl bg-sky p-5 text-sm leading-6 text-slate-600"><strong className="text-navy">Where to find your AWB</strong><p className="mt-2">Look at the booking confirmation, cargo receipt or shipment email. It normally appears as an airline prefix followed by eight digits.</p></div></div><div className="rounded-[26px] border border-slate-200 bg-mist p-5 shadow-card sm:p-8"><form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Air waybill number</span><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-brand" size={19}/><input value={awb} onChange={e=>{setAwb(e.target.value);setLookedUp(false)}} className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-12 pr-4 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100" placeholder="Enter AWB number" required/></label><button className="inline-flex items-center justify-center gap-2 rounded-xl bg-navy px-6 py-4 text-sm font-bold text-white">Track shipment <ArrowRight size={16}/></button></form>{lookedUp?<div className="mt-6 rounded-2xl border border-green-200 bg-white p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Air waybill</span><h2 className="font-display mt-1 text-2xl font-semibold text-navy">{awb}</h2></div><span className="w-fit rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-brand">In transit</span></div><div className="mt-5 flex items-center justify-between rounded-xl bg-sky p-5"><strong className="font-display text-xl text-navy">DEL</strong><div className="flex flex-1 items-center px-4 text-brand"><span className="h-px flex-1 bg-blue-200"/><Plane className="mx-3"/><span className="h-px flex-1 bg-blue-200"/></div><strong className="font-display text-xl text-navy">DXB</strong></div><p className="mt-4 flex items-center gap-2 text-sm font-semibold text-green-700"><CircleCheck size={17}/> Flight departed origin hub · ETA 24 Jul, 14:30</p></div>:<div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-blue-200 bg-white p-9 text-center"><PackageCheck className="text-blue-200" size={42}/><p className="mt-3 text-sm text-slate-500">Your latest shipment milestone will appear here.</p></div>}</div></div></section><section className="section-pad bg-sky"><div className="container-site grid gap-10 lg:grid-cols-[1.1fr_.9fr]"><div><SectionHeading eyebrow="Cargo journey" title="Understand every tracking milestone." text="Operational milestones explain where your cargo is and what the next hand-off will be."/><div className="mt-9 space-y-3">{milestones.map(([title,text],i)=><div key={title} className="flex gap-4 rounded-2xl border border-blue-100 bg-white p-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">{i+1}</span><div><h3 className="font-display font-semibold text-navy">{title}</h3><p className="mt-1 text-sm leading-6 text-slate-600">{text}</p></div></div>)}</div></div><aside className="h-fit rounded-[26px] bg-navy p-7 text-white sm:p-9"><Headphones className="text-gold" size={30}/><h2 className="font-display mt-5 text-2xl font-semibold">Need an operational update?</h2><p className="mt-3 text-sm leading-7 text-blue-100/75">If a milestone has not changed or your cargo requires urgent attention, contact the operations desk with the AWB and destination.</p><a href="tel:+919810080808" className="mt-7 flex items-center gap-3 rounded-xl bg-white/10 p-4 text-sm font-bold"><Phone size={18} className="text-gold"/> +91 98100 80808</a><a href="mailto:cargo@allianceaircargo.in" className="mt-3 flex items-center gap-3 rounded-xl bg-white/10 p-4 text-sm font-bold"><Mail size={18} className="text-gold"/> cargo@allianceaircargo.in</a></aside></div></section><PageCta title="Ready to manage every shipment in one place?" text="Sign in to view bookings, shipment history, documents and detailed cargo milestones."/></>
+}
+
+function SchedulePage() {
+  const flights=[['AAC 701','Delhi (DEL)','Dubai (DXB)','Daily','15:30','18:30'],['AAC 214','Mumbai (BOM)','Frankfurt (FRA)','Mon · Wed · Fri','17:00','21:10'],['AAC 508','Bengaluru (BLR)','Singapore (SIN)','Tue · Thu · Sat','21:30','01:45'],['AAC 119','Delhi (DEL)','London (LHR)','Mon · Thu · Sat','23:00','05:20']]
+  return <><PageHero eyebrow="Flight schedule" title="Plan cargo around dependable uplift." text="Review indicative departures, cargo acceptance cut-offs and key connections across our priority network." image="/images/hero-cargo.jpg" imageAlt="Cargo aircraft positioned at an airport terminal"><a href={portalLink('booking')} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold text-white">Check space <CalendarDays size={16}/></a><a href="#/contact" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 text-sm font-bold text-navy">Request a route</a></PageHero><section className="section-pad bg-white"><div className="container-site"><SectionHeading eyebrow="Priority departures" title="Indicative cargo flight schedule." text="Times are shown in local time and remain subject to aircraft, regulatory and capacity changes."/><div className="mt-10 overflow-hidden rounded-2xl border border-slate-200 shadow-card"><div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead className="bg-navy text-[10px] uppercase tracking-wider text-blue-100"><tr>{['Flight','Origin','Destination','Frequency','Cargo cut-off','Departure'].map(x=><th key={x} className="px-5 py-4">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{flights.map(row=><tr key={row[0]} className="text-sm hover:bg-sky"><td className="px-5 py-5 font-bold text-brand">{row[0]}</td>{row.slice(1).map((cell,i)=><td key={cell} className={`px-5 py-5 ${i===4?'font-bold text-navy':'text-slate-600'}`}>{cell}</td>)}</tr>)}</tbody></table></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3">{[[Clock3,'Cut-off guidance','Cargo should arrive before the published acceptance cut-off with documents ready.'],[ShieldCheck,'Acceptance checks','Final uplift depends on security, documentation, dimensions and airline approval.'],[Headphones,'Schedule support','Our team confirms the latest operating schedule before every booking.']].map(([Icon,t,d])=><article key={t} className="rounded-2xl bg-mist p-6"><Icon className="text-brand"/><h3 className="font-display mt-4 font-semibold text-navy">{t}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{d}</p></article>)}</div></div></section><Network/><PageCta title="Need space on an upcoming departure?" text="Share your cargo dimensions, weight and preferred uplift date for a confirmed routing option."/></>
+}
+
+function AboutPage() {
+  return <><PageHero eyebrow="About Alliance" title="Cargo expertise with personal accountability." text="Alliance Air Cargo supports businesses with reliable capacity, practical solutions and experienced people who stay close to every shipment." image="/images/warehouse-ops.jpg" imageAlt="Alliance cargo operations team coordinating warehouse activity"><a href="#/contact" className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold text-white">Meet our cargo desk <ArrowRight size={16}/></a></PageHero><section className="section-pad bg-white"><div className="container-site grid gap-10 lg:grid-cols-2 lg:items-center"><div className="overflow-hidden rounded-[26px] shadow-soft"><img loading="lazy" decoding="async" width="1200" height="800" src="/images/warehouse-team.jpg" alt="Professional cargo team working together" className="h-[460px] w-full object-cover"/></div><div><SectionHeading eyebrow="Our story" title="Built for businesses that cannot afford uncertainty." text="Since 2010, our focus has stayed simple: understand the cargo, choose a sensible routing and keep the customer informed."/><p className="mt-6 text-sm leading-7 text-slate-600">Our team brings together airline coordination, airport handling, customs support and surface logistics. That connected view helps us solve problems earlier and keep responsibility clear from enquiry to delivery.</p><div className="mt-8 grid grid-cols-2 gap-3">{[['15+','Years of expertise'],['42','Connected cities'],['24/7','Operational support'],['98.4%','On-time uplift']].map(([n,l])=><div key={l} className="rounded-xl bg-sky p-5"><strong className="font-display text-2xl text-navy">{n}</strong><span className="mt-1 block text-[11px] text-slate-500">{l}</span></div>)}</div></div></div></section><WhyUs/><section className="section-pad bg-white"><div className="container-site"><SectionHeading center eyebrow="Our principles" title="How we work, every day." text="The standards behind every customer conversation and operational decision."/><div className="mt-10 grid gap-5 md:grid-cols-3">{[[ShieldCheck,'Integrity','Clear commitments, transparent updates and responsible cargo handling.'],[Users,'Partnership','We work as an extension of customer supply-chain and operations teams.'],[Zap,'Responsiveness','Fast decisions and practical action when cargo plans change.']].map(([Icon,t,d])=><article key={t} className="rounded-2xl border border-slate-200 p-7 text-center shadow-card"><span className="mx-auto grid h-13 w-13 place-items-center rounded-xl bg-sky text-brand"><Icon/></span><h3 className="font-display mt-5 text-lg font-semibold text-navy">{t}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{d}</p></article>)}</div></div></section><PageCta title="Put an experienced cargo team behind your next shipment." text="Tell us what you are moving and where it needs to go. We will help plan the next step."/></>
+}
+
+function ContactPage() {
+  const offices=[['New Delhi','Cargo Terminal 2 · IGI Airport','+91 98100 80808'],['Mumbai','Air Cargo Complex · Sahar','+91 98100 80808'],['Bengaluru','Kempegowda Cargo Village','+91 98100 80808']]
+  return <><PageHero eyebrow="Contact Alliance" title="Talk directly to a cargo specialist." text="Whether you need a quote, route guidance or an urgent operational update, our team will connect you with the right desk." image="/images/hero-modern-urban.jpg" imageAlt="International airport logistics and cargo connections"><a href="tel:+919810080808" className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-sm font-bold text-white"><Phone size={16}/> Call cargo desk</a><a href="mailto:cargo@allianceaircargo.in" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 text-sm font-bold text-navy"><Mail size={16}/> Send an email</a></PageHero><section className="section-pad bg-white"><div className="container-site"><SectionHeading eyebrow="Our offices" title="Local support at major cargo gateways." text="Contact the central cargo desk and we will coordinate with the closest operational station."/><div className="mt-10 grid gap-5 md:grid-cols-3">{offices.map(([city,address,phone])=><article key={city} className="rounded-2xl border border-slate-200 p-6 shadow-card"><MapPin className="text-brand"/><h3 className="font-display mt-5 text-xl font-semibold text-navy">{city}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{address}</p><a href={`tel:${phone.replace(/\s/g,'')}`} className="mt-5 block text-sm font-bold text-brand">{phone}</a><p className="mt-2 text-[11px] text-slate-400">Mon–Sat · 09:00–19:00</p></article>)}</div></div></section><QuoteContact/><FAQ/></>
+}
+
 function Footer() {
   return (
     <footer className="bg-[#0b2845] text-white">
       <div className="container-site grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_.7fr_.8fr_1fr]">
         <div><Logo light/><p className="mt-5 max-w-xs text-sm leading-6 text-blue-100/65">Reliable air freight and logistics solutions, connecting Indian businesses to the world with speed and care.</p><div className="mt-6 flex gap-2">{[Share2,Users,Camera].map((Icon,i)=><a key={i} href="#" aria-label={['LinkedIn','Facebook','Instagram'][i]} className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 text-blue-100 transition hover:bg-brand hover:text-white"><Icon size={16}/></a>)}</div></div>
-        <div><h3 className="font-display text-sm font-semibold">Company</h3><ul className="mt-5 space-y-3 text-xs text-blue-100/65">{[['About us','#about'],['Services','#services'],['Network','#network'],['Contact','#contact']].map(([x,h])=><li key={x}><a href={h} className="hover:text-white">{x}</a></li>)}</ul></div>
+        <div><h3 className="font-display text-sm font-semibold">Company</h3><ul className="mt-5 space-y-3 text-xs text-blue-100/65">{[['About us','#/about'],['Services','#/services'],['Schedule','#/schedule'],['Contact','#/contact']].map(([x,h])=><li key={x}><a href={h} className="hover:text-white">{x}</a></li>)}</ul></div>
         <div><h3 className="font-display text-sm font-semibold">Cargo tools</h3><ul className="mt-5 space-y-3 text-xs text-blue-100/65">{[['Track shipment',portalLink('track')],['Rate calculator',portalLink('rates')],['Book shipment',portalLink('booking')],['Client login',portalLink('login')]].map(([x,h])=><li key={x}><a href={h} className="hover:text-white">{x}</a></li>)}</ul></div>
         <div><h3 className="font-display text-sm font-semibold">Operations desk</h3><p className="mt-5 text-xs leading-6 text-blue-100/65">Monday–Saturday<br/>09:00–19:00 IST</p><a href="tel:+919810080808" className="mt-4 block text-sm font-semibold">+91 98100 80808</a><a href="mailto:cargo@allianceaircargo.in" className="mt-2 block text-xs text-blue-200">cargo@allianceaircargo.in</a></div>
       </div>
@@ -355,10 +406,19 @@ function Footer() {
 }
 
 export default function App() {
+  const readRoute=()=>{const route=window.location.hash.replace(/^#\/?/,'').split('?')[0];return ['services','track','schedule','about','contact'].includes(route)?route:'home'}
+  const [route,setRoute]=useState(readRoute)
+  useEffect(()=>{const change=()=>{setRoute(readRoute());window.scrollTo({top:0,behavior:'auto'})};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change)},[])
   useEffect(() => {
     const observer = new IntersectionObserver(entries => entries.forEach(entry => entry.isIntersecting && entry.target.classList.add('is-visible')), { threshold: .12 })
     document.querySelectorAll('.fade-up').forEach(el => observer.observe(el))
     return () => observer.disconnect()
-  }, [])
-  return <><Header/><main id="main-content"><Hero/><Partners/><Services/><Tracking/><WhyUs/><Network/><Fleet/><Testimonials/><FAQ/><QuoteContact/></main><Footer/><a href="https://wa.me/919810080808" target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp" className="fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-[#25D366] text-white shadow-xl transition hover:-translate-y-1"><MessageCircle size={24} fill="currentColor"/></a></>
+  }, [route])
+  let page=<><Hero/><Partners/><Services/><Tracking/><WhyUs/><Network/><Fleet/><Testimonials/><FAQ/><QuoteContact/></>
+  if(route==='services')page=<ServicesPage/>
+  if(route==='track')page=<TrackPage/>
+  if(route==='schedule')page=<SchedulePage/>
+  if(route==='about')page=<AboutPage/>
+  if(route==='contact')page=<ContactPage/>
+  return <><Header route={route}/><main id="main-content">{page}</main><Footer/><a href="https://wa.me/919810080808" target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp" className="fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-[#25D366] text-white shadow-xl transition hover:-translate-y-1"><MessageCircle size={24} fill="currentColor"/></a></>
 }
