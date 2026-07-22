@@ -288,12 +288,16 @@ app.post('/api/rates/quote', (request, response) => {
 
 app.post('/api/freight/calculate', authenticate, asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
-  const memoryProfile = Array.isArray(memoryAdminState.charges) ? cleanObject(memoryAdminState.charges[0]) : cleanObject(memoryAdminState.chargeControls)
+  const memoryProfile = Array.isArray(memoryAdminState.charges)
+    ? cleanObject(memoryAdminState.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
+    : cleanObject(memoryAdminState.chargeControls)
   let controls = { ...defaultChargeControls, ...memoryProfile }
   if (pool && databaseStatus === 'connected') {
     const result = await pool.query(`SELECT key, value FROM admin_state WHERE key IN ('chargeControls', 'charges')`)
     const saved = Object.fromEntries(result.rows.map(row => [row.key, row.value]))
-    const chargeProfile = Array.isArray(saved.charges) ? cleanObject(saved.charges[0]) : cleanObject(saved.chargeControls)
+    const chargeProfile = Array.isArray(saved.charges)
+      ? cleanObject(saved.charges.find(profile => String(profile?.status || 'Active').toLowerCase() === 'active'))
+      : cleanObject(saved.chargeControls)
     controls = { ...controls, ...chargeProfile }
   }
 
@@ -333,6 +337,7 @@ app.post('/api/freight/calculate', authenticate, asyncRoute(async (request, resp
     charges,
     total,
     controls,
+    pricingSource: 'super-admin',
     flights: flightOptionsFor(String(data.origin || 'DEL'), String(data.destination || 'DXB'), data.bookingDate),
   })
 }))
