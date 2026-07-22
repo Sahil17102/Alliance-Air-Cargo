@@ -197,6 +197,32 @@ const transactionJson = row => ({
   balanceAfter: money(row.balance_after),
   createdAt: row.created_at,
 })
+const normalizedAgentStatus = value => {
+  const status = String(value || '').trim().toLowerCase()
+  if (status === 'active' || status === 'approved') return 'Active'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'suspended') return 'Suspended'
+  return 'Pending'
+}
+const agentAdminJson = account => {
+  const data = cleanObject(account)
+  const stationValue = String(data.station || 'Pan India')
+  const station = stationValue.split(/[—–-]/)[0].trim() || 'Pan India'
+  const city = data.city || stationValue.split(/[—–]/)[1]?.trim() || stationValue
+  return {
+    ...data,
+    name: data.business || data.name || 'Registered business',
+    contact: data.contact || data.applicantName || data.name || '',
+    applicantName: data.applicantName || data.name || '',
+    station,
+    city,
+    accountNumber: data.accountNumber || 'Assigned after approval',
+    agentName: data.agentName || data.carrierAgentName || 'Alliance Air Cargo India Pvt. Ltd.',
+    iataCode: data.iataCode || 'Assigned after approval',
+    documents: data.documents || 'Review',
+    status: normalizedAgentStatus(data.status),
+  }
+}
 
 async function ensureWallet(db, email, profile = {}) {
   const result = await db.query(
@@ -370,6 +396,17 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   response.json({ user: safeUser })
 }))
 
+app.get('/api/auth/me', authenticate, asyncRoute(async (request, response) => {
+  const email = String(request.user.sub || '').toLowerCase()
+  let account = demoAccounts.get(email)
+  if (request.user.role === 'agent' && pool && databaseStatus === 'connected') {
+    const result = await pool.query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
+    if (result.rowCount) account = { ...result.rows[0].data, email, role: 'agent', status: normalizedAgentStatus(result.rows[0].data.status) }
+  }
+  const user = { ...publicAccount(account || request.user), email, role: request.user.role }
+  response.json({ user })
+}))
+
 app.post('/api/auth/logout', (_request, response) => {
   response.clearCookie('aac_session', { httpOnly: true, secure: production, sameSite: production ? 'none' : 'lax', path: '/' })
   response.json({ message: 'Signed out' })
@@ -382,15 +419,16 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   if (!email || password.length < 8) return response.status(400).json({ message: 'A valid email and password of at least 8 characters are required' })
   const id = `AGT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
   const passwordHash = await bcrypt.hash(password, 12)
-  const record = { ...publicAccount(data), id, email, role: 'agent', status: data.status || 'Pending' }
+  const record = { ...publicAccount(data), id, email, role: 'agent', status: 'Pending', submittedAt: new Date().toISOString() }
   await requireDatabase().query(
     `INSERT INTO agent_registrations (id, email, password_hash, data)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, data = EXCLUDED.data, updated_at = NOW()`,
+     ON CONFLICT (email) DO UPDATE SET id = EXCLUDED.id, password_hash = EXCLUDED.password_hash, data = EXCLUDED.data, updated_at = NOW()`,
     [id, email, passwordHash, record],
   )
   await ensureWallet(requireDatabase(), email, record)
-  response.status(201).json({ account: record })
+  issueSession(response, record)
+  response.status(201).json({ account: record, message: 'Registration submitted for Super Admin approval' })
 }))
 
 app.post('/api/quotes', asyncRoute(async (request, response) => {
@@ -512,6 +550,10 @@ app.post('/api/bookings', authenticate, requireRole('agent'), asyncRoute(async (
   const client = await requireDatabase().connect()
   try {
     await client.query('BEGIN')
+    const registration = await client.query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1 FOR SHARE', [String(request.user.sub || '').toLowerCase()])
+    if (registration.rowCount && normalizedAgentStatus(registration.rows[0].data?.status) !== 'Active') {
+      throw Object.assign(new Error('Business verification is pending. Super Admin approval is required before booking.'), { status: 403 })
+    }
     const duplicate = await client.query('SELECT awb FROM cargo_bookings WHERE awb = $1 FOR UPDATE', [awb])
     if (duplicate.rowCount) throw Object.assign(new Error('This booking has already been confirmed'), { status: 409 })
     const freightSummary = await calculateFreightDetails(data, client)
@@ -583,11 +625,49 @@ app.get('/api/admin/bootstrap', authenticate, requireRole('superadmin'), asyncRo
     db.query('SELECT * FROM wallet_transactions ORDER BY created_at DESC LIMIT 250'),
   ])
   const state = Object.fromEntries(stateResult.rows.map(row => [row.key, row.value]))
-  if (agentsResult.rowCount) state.agents = agentsResult.rows.map(row => row.data)
+  const managedAgents = Array.isArray(state.agents) ? state.agents : []
+  const registeredAgents = agentsResult.rows.map(row => agentAdminJson(row.data))
+  const registeredKeys = new Set(registeredAgents.flatMap(item => [item.id, String(item.email || '').toLowerCase()]).filter(Boolean))
+  state.agents = [...registeredAgents, ...managedAgents.filter(item => !registeredKeys.has(item.id) && !registeredKeys.has(String(item.email || '').toLowerCase()))]
   if (bookingsResult.rowCount) state.bookings = bookingsResult.rows.map(row => row.data)
   state.wallets = walletsResult.rows.map(walletJson)
   state.walletTransactions = transactionsResult.rows.map(transactionJson)
   response.json(state)
+}))
+
+app.patch('/api/admin/agents/:id/status', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
+  const id = String(request.params.id || '').trim()
+  const requestedStatus = String(request.body?.status || '').trim()
+  if (!id) return response.status(400).json({ message: 'Agent registration ID is required' })
+  if (!['Active', 'Rejected', 'Suspended', 'Pending'].includes(requestedStatus)) return response.status(400).json({ message: 'Select a valid agent approval status' })
+  const client = await requireDatabase().connect()
+  try {
+    await client.query('BEGIN')
+    const locked = await client.query(`SELECT id AS row_id, email, data FROM agent_registrations WHERE id = $1 OR data->>'id' = $1 ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`, [id])
+    if (!locked.rowCount) throw Object.assign(new Error('Registered agent was not found'), { status: 404 })
+    const current = cleanObject(locked.rows[0].data)
+    const stationValue = String(current.station || 'DEL')
+    const stationCode = stationValue.split(/[—–-]/)[0].trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'DEL'
+    const suffix = String(id).replace(/[^A-Z0-9]/gi, '').slice(-4).toUpperCase().padStart(4, '0')
+    const approvedFields = requestedStatus === 'Active' ? {
+      accountNumber: current.accountNumber && current.accountNumber !== 'Assigned after approval' ? current.accountNumber : `AAC-${stationCode}-${suffix}`,
+      agentName: current.agentName || 'Alliance Air Cargo India Pvt. Ltd.',
+      carrierAgentName: current.carrierAgentName || current.agentName || 'Alliance Air Cargo India Pvt. Ltd.',
+      iataCode: current.iataCode && current.iataCode !== 'Assigned after approval' ? current.iataCode : `14-3-${suffix}`,
+      documents: 'Verified',
+      approvedAt: new Date().toISOString(),
+    } : {}
+    const nextData = { ...current, ...approvedFields, status: requestedStatus, reviewedAt: new Date().toISOString(), reviewedBy: request.user.sub }
+    const updated = await client.query('UPDATE agent_registrations SET data = $2, updated_at = NOW() WHERE id = $1 RETURNING email, data', [locked.rows[0].row_id, nextData])
+    await ensureWallet(client, updated.rows[0].email, nextData)
+    await client.query('COMMIT')
+    response.json({ agent: agentAdminJson(updated.rows[0].data), message: `Agent marked ${requestedStatus}` })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }))
 
 app.post('/api/admin/wallets/:email/adjust', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {

@@ -238,7 +238,7 @@ function OperationalEntityManager({type,rows=[],setRows,audit,toast,extraActions
   const filtered=rows.filter(item=>(statusFilter==='All'||item.status===statusFilter)&&Object.values(item).some(value=>String(value).toLowerCase().includes(query.toLowerCase())))
   const pages=Math.max(1,Math.ceil(filtered.length/perPage)), safePage=Math.min(page,pages)
   const visible=filtered.slice((safePage-1)*perPage,safePage*perPage)
-  const canToggle=['users','agents','employees','stations','rates','charges','commodities'].includes(type)
+  const canToggle=['users','employees','stations','rates','charges','commodities'].includes(type)
   const submit=form=>{
     if(editor?.id){setRows(rows.map(item=>item.id===editor.id?{...item,...form}:item));audit(`Updated ${config.singular.toLowerCase()} ${editor.id}`,config.title);toast(`${config.singular} updated successfully.`)}
     else{const record={...form,id:form.id||makeId(config.prefix),lastLogin:'Never'};setRows([record,...rows]);audit(`Created ${config.singular.toLowerCase()} ${record.id}`,config.title);toast(`${config.singular} created successfully.`)}
@@ -263,7 +263,7 @@ function NotFound(){return <div className="card grid min-h-[65vh] place-items-ce
 function AdminApp({onLogout,toast}){
   const [route,setRoute]=useState(currentRoute()),[mobile,setMobile]=useState(false),[collapsed,setCollapsed]=useState(false),[globalSearch,setGlobalSearch]=useState(''),[state,setState]=useState(()=>JSON.parse(localStorage.getItem('aac_admin_state')||'null')||seedState)
   useEffect(()=>{const fn=()=>setRoute(currentRoute());window.addEventListener('hashchange',fn);return()=>window.removeEventListener('hashchange',fn)},[])
-  useEffect(()=>{api.get('/api/admin/bootstrap').then(data=>{if(data&&typeof data==='object')setState(current=>({...current,...data,wallets:data.wallets||current.wallets,walletTransactions:data.walletTransactions||current.walletTransactions}))}).catch(()=>{})},[])
+  useEffect(()=>{const sync=()=>api.get('/api/admin/bootstrap').then(data=>{if(data&&typeof data==='object')setState(current=>({...current,...data,wallets:data.wallets||current.wallets,walletTransactions:data.walletTransactions||current.walletTransactions}))}).catch(()=>{});sync();const timer=setInterval(sync,15000);return()=>clearInterval(timer)},[])
   useEffect(()=>localStorage.setItem('aac_admin_state',JSON.stringify(state)),[state])
   const update=(key,value)=>setState(current=>{const nextValue=typeof value==='function'?value(current[key]):value;const next={...current,[key]:nextValue};api.patch('/api/admin/state',{[key]:nextValue}).catch(()=>{});return next})
   const audit=(action,module)=>update('logs',logs=>[{id:makeId('LOG'),user:'Aarav Sharma',action,module,ip:'127.0.0.1',time:'Just now'},...logs])
@@ -273,7 +273,7 @@ function AdminApp({onLogout,toast}){
     wallets:[wallet,...(current.wallets||[]).filter(item=>item.email!==wallet.email)],
     walletTransactions:transaction?[transaction,...(current.walletTransactions||[]).filter(item=>item.id!==transaction.id)]:(current.walletTransactions||[]),
   }))
-  const approveAgent=(record,status)=>{update('agents',rows=>rows.map(item=>item.id===record.id?{...item,status,documents:status==='Active'?'Verified':item.documents}:item));audit(`${status==='Active'?'Approved':'Rejected'} agent ${record.id}`,'Agent Management');toast(`Agent ${record.id} ${status==='Active'?'approved':'rejected'}.`)}
+  const approveAgent=async(record,status)=>{try{const result=await api.patch(`/api/admin/agents/${encodeURIComponent(record.id)}/status`,{status});setState(current=>({...current,agents:(current.agents||[]).map(item=>item.id===record.id?result.agent:item)}));audit(`${status==='Active'?'Approved':'Rejected'} agent ${record.id}`,'Agent Management');toast(`Agent ${record.id} ${status==='Active'?'approved and synced to client':'rejected'}.`)}catch(error){toast(error.message||'Agent approval could not be saved.','error')}}
   const refundPayment=record=>{update('payments',rows=>rows.map(item=>item.id===record.id?{...item,status:'Refunded'}:item));audit(`Refunded payment ${record.id}`,'Payment Management');toast(`Refund processed for ${record.id}.`)}
   let page
   if(route==='dashboard') page=<DashboardV2 state={state}/>
@@ -281,7 +281,7 @@ function AdminApp({onLogout,toast}){
   else if(route==='wallets') page=<WalletManagement wallets={state.wallets||[]} transactions={state.walletTransactions||[]} onWalletChange={onWalletChange} audit={audit} toast={toast}/>
   else if(entityConfigs[route]){
     let extras
-    if(route==='agents') extras=record=><>{record.status==='Pending'&&<button title="Approve" onClick={()=>approveAgent(record,'Active')} className="grid h-8 w-8 place-items-center rounded-lg text-green-600 hover:bg-green-50"><CheckCircle2 size={14}/></button>}{record.status==='Pending'&&<button title="Reject" onClick={()=>approveAgent(record,'Rejected')} className="grid h-8 w-8 place-items-center rounded-lg text-red-500 hover:bg-red-50"><XCircle size={14}/></button>}</>
+    if(route==='agents') extras=record=><>{record.status==='Pending'&&<button title="Approve and activate" onClick={()=>approveAgent(record,'Active')} className="grid h-8 w-8 place-items-center rounded-lg text-green-600 hover:bg-green-50"><CheckCircle2 size={14}/></button>}{record.status==='Pending'&&<button title="Reject application" onClick={()=>approveAgent(record,'Rejected')} className="grid h-8 w-8 place-items-center rounded-lg text-red-500 hover:bg-red-50"><XCircle size={14}/></button>}{record.status==='Active'&&<button title="Suspend client access" onClick={()=>approveAgent(record,'Suspended')} className="grid h-8 w-8 place-items-center rounded-lg text-amber-600 hover:bg-amber-50"><LockKeyhole size={14}/></button>}{['Suspended','Rejected'].includes(record.status)&&<button title="Reactivate client access" onClick={()=>approveAgent(record,'Active')} className="grid h-8 w-8 place-items-center rounded-lg text-green-600 hover:bg-green-50"><RefreshCcw size={14}/></button>}</>
     if(route==='bookings') extras=record=><><button title="Track shipment" onClick={()=>go('tracking')} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-blue-50 hover:text-brand"><MapPin size={14}/></button><button title="Print AWB" onClick={()=>{toast(`AWB ${record.id} opened for printing.`);setTimeout(()=>window.print(),150)}} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-navy"><Printer size={14}/></button></>
     if(route==='payments') extras=record=><button title="Refund payment" disabled={record.status==='Refunded'} onClick={()=>refundPayment(record)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-30"><RotateCcw size={14}/></button>
     page=<OperationalEntityManager type={route} rows={state[route]} setRows={setRows(route)} audit={audit} toast={toast} extraActions={extras}/>

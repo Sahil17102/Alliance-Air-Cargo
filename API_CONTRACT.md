@@ -10,6 +10,7 @@ The backend implements these endpoints:
 | `POST` | `/api/quotes` | Landing | Save public quote request |
 | `POST` | `/api/auth/login` | Client/Admin | Authenticate and issue secure session |
 | `POST` | `/api/auth/register` | Client | Submit agent registration |
+| `GET` | `/api/auth/me` | Client | Refresh the signed-in account and latest approval status |
 | `GET` | `/api/shipments` | Client | Load authenticated customer shipments |
 | `POST` | `/api/bookings` | Client | Atomically create a cargo booking and debit its server-calculated freight from the wallet |
 | `POST` | `/api/rates/quote` | Client | Calculate live rate from admin-managed tariffs |
@@ -18,6 +19,7 @@ The backend implements these endpoints:
 | `GET` | `/api/wallet` | Client | Load the authenticated client's wallet and transaction ledger |
 | `POST` | `/api/wallet/top-up` | Client | Add prepaid funds and record a credit transaction |
 | `GET` | `/api/admin/bootstrap` | Super Admin | Load users, agents, rates, flights, wallets and operational state |
+| `PATCH` | `/api/admin/agents/:id/status` | Super Admin | Approve, reject or suspend a registered agent and sync the client account |
 | `POST` | `/api/admin/wallets/:email/adjust` | Super Admin | Credit or debit a client wallet with a required audit note |
 | `PATCH` | `/api/admin/wallets/:email/status` | Super Admin | Freeze or reactivate a client wallet |
 | `PATCH` | `/api/admin/state` | Super Admin | Persist an updated admin module |
