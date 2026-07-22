@@ -11,7 +11,11 @@ export async function apiRequest(path, options = {}) {
   })
   const contentType = response.headers.get('content-type') || ''
   const payload = contentType.includes('application/json') ? await response.json() : await response.text()
-  if (!response.ok) throw new Error(payload?.message || `API request failed (${response.status})`)
+  if (!response.ok) {
+    const error = new Error(payload?.message || `API request failed (${response.status})`)
+    error.status = response.status
+    throw error
+  }
   return payload
 }
 

@@ -260,6 +260,23 @@ const agentAdminJson = account => {
   }
 }
 
+const agentApprovalNotification = account => {
+  const agent = agentAdminJson(account)
+  return {
+    id: `AGENT-APPROVAL-${agent.id}`,
+    type: 'agent-approval',
+    agentId: agent.id,
+    title: `New client approval: ${agent.name}`,
+    message: `${agent.contact || agent.email || 'A new client'} submitted a registration for ${agent.station || 'Pan India'}. Review and verify the account.`,
+    channel: 'Super Admin',
+    audience: 'Super Admin',
+    sent: agent.submittedAt || new Date().toISOString(),
+    createdAt: agent.submittedAt || new Date().toISOString(),
+    status: 'Unread',
+    route: 'agents',
+  }
+}
+
 async function ensureWallet(db, email, profile = {}) {
   const result = await db.query(
     `INSERT INTO wallet_accounts (owner_email, owner_name, business_name, balance)
@@ -851,6 +868,15 @@ app.get('/api/admin/bootstrap', authenticate, requireRole('superadmin'), asyncRo
   const registeredAgents = agentsResult.rows.map(row => agentAdminJson(row.data))
   const registeredKeys = new Set(registeredAgents.flatMap(item => [item.id, String(item.email || '').toLowerCase()]).filter(Boolean))
   state.agents = [...registeredAgents, ...managedAgents.filter(item => !registeredKeys.has(item.id) && !registeredKeys.has(String(item.email || '').toLowerCase()))]
+  const savedNotifications = Array.isArray(state.notifications) ? state.notifications : []
+  const approvalNotifications = registeredAgents
+    .filter(item => item.status === 'Pending')
+    .map(agentApprovalNotification)
+  state.notifications = [
+    ...approvalNotifications,
+    ...savedNotifications.filter(item => item.type !== 'agent-approval'),
+  ]
+  state.pendingAgentApprovals = approvalNotifications.length
   if (bookingsResult.rowCount) state.bookings = bookingsResult.rows.map(row => row.data)
   state.wallets = walletsResult.rows.map(walletJson)
   state.walletTransactions = transactionsResult.rows.map(transactionJson)
