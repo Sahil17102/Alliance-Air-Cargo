@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-display: "Poppins", sans-serif;
+  --color-brand: #0f62fe;
+  --color-navy: #12355b;
+  --color-sky: #eaf6ff;
+  --color-mist: #f5f7fa;
+  --color-gold: #f4b400;
+}
+
+:root { font-family: "Inter", sans-serif; color: #19324d; background: #f5f7fa; }
+* { box-sizing: border-box; }
+html { min-width: 320px; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
+.font-display { font-family: "Poppins", sans-serif; }
+.auth-pattern { background-image: radial-gradient(circle at 20% 20%, rgba(255,255,255,.13) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 60%, rgba(244,180,0,.25) 0 1px, transparent 1.5px); background-size: 32px 32px, 42px 42px; }
+.shadow-card { box-shadow: 0 15px 42px rgba(18,53,91,.09); }
+.field { width: 100%; border: 1px solid #dbe3ec; border-radius: .75rem; background: #fff; padding: .8rem .9rem; font-size: .875rem; outline: none; transition: border-color .2s, box-shadow .2s; }
+.field:focus { border-color: #0f62fe; box-shadow: 0 0 0 3px rgba(15,98,254,.1); }
+.field-label { display: block; margin-bottom: .45rem; font-size: .7rem; line-height: 1rem; font-weight: 700; color: #12355b; }
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: 0; border-radius: .75rem; background: #0f62fe; padding: .85rem 1.15rem; color: #fff; font-size: .875rem; font-weight: 700; cursor: pointer; transition: background .2s, transform .2s; }
+.btn-primary:hover { background: #0b52db; transform: translateY(-1px); }
+.btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: 1px solid #dbe3ec; border-radius: .75rem; background: #fff; padding: .8rem 1.1rem; color: #12355b; font-size: .875rem; font-weight: 700; cursor: pointer; }
+.card { border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; box-shadow: 0 10px 30px rgba(18,53,91,.055); }
+.fade { animation: fade .35s ease both; }
+@keyframes fade { from { opacity: 0; transform: translateY(7px); } }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

@@ -1,0 +1,27 @@
+{
+  "name": "alliance-air-cargo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:portal": "npm --prefix client-portal run dev",
+    "dev:admin": "npm --prefix super-admin run dev",
+    "build": "vite build",
+    "build:portal": "npm --prefix client-portal run build",
+    "build:admin": "npm --prefix super-admin run build",
+    "build:all": "npm run build && npm run build:portal && npm run build:admin",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "latest",
+    "tailwindcss": "latest"
+  }
+}

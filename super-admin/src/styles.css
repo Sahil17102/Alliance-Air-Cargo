@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-display: "Poppins", sans-serif;
+  --color-brand: #0f62fe;
+  --color-navy: #12355b;
+  --color-sky: #eaf6ff;
+  --color-mist: #f5f7fa;
+  --color-gold: #f4b400;
+}
+
+:root { font-family: "Inter", sans-serif; color: #19324d; background: #f5f7fa; }
+* { box-sizing: border-box; }
+html { min-width: 320px; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; outline-offset: 3px; }
+.font-display { font-family: "Poppins", sans-serif; }
+.card { border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; box-shadow: 0 8px 28px rgba(18,53,91,.052); }
+.field { width: 100%; border: 1px solid #dbe3ec; border-radius: .7rem; background: #fff; padding: .7rem .85rem; color: #19324d; font-size: .8rem; outline: none; transition: border-color .2s, box-shadow .2s; }
+.field:focus { border-color: #0f62fe; box-shadow: 0 0 0 3px rgba(15,98,254,.1); }
+.label { display: block; font-size: .68rem; line-height: 1rem; font-weight: 700; color: #12355b; }
+.btn-primary { display:inline-flex;align-items:center;justify-content:center;gap:.45rem;border:0;border-radius:.7rem;background:#0f62fe;padding:.72rem 1rem;color:#fff;font-size:.75rem;font-weight:700;cursor:pointer;transition:.2s; }
+.btn-primary:hover { background:#0b52db;transform:translateY(-1px); }
+.btn-secondary { display:inline-flex;align-items:center;justify-content:center;gap:.45rem;border:1px solid #dbe3ec;border-radius:.7rem;background:#fff;padding:.68rem .95rem;color:#12355b;font-size:.75rem;font-weight:700;cursor:pointer;transition:.2s; }
+.btn-secondary:hover { border-color:#b9d3ff;background:#f5f9ff;color:#0f62fe; }
+.auth-grid { background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 42px 42px; }
+.fade { animation: fade .3s ease both; }
+.pulse-soft { animation: pulse 2s ease-in-out infinite; }
+@keyframes fade { from { opacity:0; transform:translateY(6px); } }
+@keyframes pulse { 50% { opacity:.45; } }
+@media print { aside, header, .no-print { display:none !important; } main { margin:0 !important; padding:0 !important; } body { background:white; } .card { box-shadow:none; } }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms !important;transition-duration:.01ms !important; } }
