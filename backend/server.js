@@ -497,7 +497,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
         user = { ...saved.data, email, role: 'agent' }
       }
     }
-    if (!valid && (requestedRole === 'employee' || portalLogin)) {
+    if (!valid && requestedRole === 'employee') {
       const result = await pool.query('SELECT owner_email, data, password_hash FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
       if (result.rowCount) {
         const saved = result.rows[0]
@@ -508,7 +508,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   }
 
   if (!valid || !user) return response.status(401).json({ message: 'Email, password or OTP is incorrect' })
-  if (portalLogin && !['agent', 'employee'].includes(user.role)) return response.status(403).json({ message: 'Account role does not match this portal' })
+  if (portalLogin && user.role !== 'agent') return response.status(403).json({ message: 'Employee access is managed from Super Admin only' })
   if (requestedRole && !portalLogin && requestedRole !== user.role) return response.status(403).json({ message: 'Account role does not match this portal' })
 
   const safeUser = { ...publicAccount(user), email }

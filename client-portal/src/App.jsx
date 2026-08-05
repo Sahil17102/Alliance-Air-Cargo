@@ -10,6 +10,7 @@ import {
 import { api } from './lib/api'
 
 const LANDING_URL = import.meta.env.VITE_LANDING_URL || 'http://127.0.0.1:5173'
+const PORTAL_CACHE_VERSION = '2026-08-05-portal-refresh'
 const DEMO_AGENT = { email: 'agent@alliancecargo.in', password: 'Cargo@123', name: 'Demo Agent', business: 'Northstar Exports', role: 'agent', status: 'Approved' }
 const stations = ['DEL — New Delhi','BOM — Mumbai','BLR — Bengaluru','MAA — Chennai','CCU — Kolkata','HYD — Hyderabad','AMD — Ahmedabad','PNQ — Pune','COK — Kochi','DXB — Dubai']
 const defaultShipments = [
@@ -94,6 +95,13 @@ const defaultWallet = {
   ],
 }
 
+try {
+  if(localStorage.getItem('aac_portal_cache_version')!==PORTAL_CACHE_VERSION){
+    ;['aac_shipments','aac_wallet','aac_booking_draft','aac_selected_rate'].forEach(key=>localStorage.removeItem(key))
+    localStorage.setItem('aac_portal_cache_version',PORTAL_CACHE_VERSION)
+  }
+} catch {}
+
 function currentRoute() {
   const hash = window.location.hash.replace(/^#\/?/, '')
   return (hash.split('?')[0] || 'login').replace(/\/$/, '')
@@ -154,7 +162,7 @@ function Login({ onLogin, onForgot, onRegister, toast }) {
   const [otpSent,setOtpSent]=useState(false)
   const [otp,setOtp]=useState('')
   const [error,setError]=useState(''),[loading,setLoading]=useState(false)
-  const submit=async e=>{e.preventDefault();setError('');if(method==='otp'&&!otpSent)return setError('Request an OTP first.');setLoading(true);try{const result=await api.post('/api/auth/login',method==='otp'?{email,otp,role:'agent'}:{email,password,role:'portal'});const registered=JSON.parse(localStorage.getItem('aac_registered')||'null');const authenticated=result?.user||{};const fallback=authenticated.role==='employee'?{email,name:'Employee',business:'Client workspace',role:'employee',status:'Active'}:(registered?.email?.toLowerCase()===email.toLowerCase()?registered:DEMO_AGENT);onLogin({...fallback,...authenticated,email})}catch(error){setError(error.message||'Unable to sign in right now.')}finally{setLoading(false)}}
+  const submit=async e=>{e.preventDefault();setError('');if(method==='otp'&&!otpSent)return setError('Request an OTP first.');setLoading(true);try{const result=await api.post('/api/auth/login',method==='otp'?{email,otp,role:'agent'}:{email,password,role:'portal'});const registered=JSON.parse(localStorage.getItem('aac_registered')||'null');const authenticated=result?.user||{};if(authenticated.role==='employee')throw new Error('Employee access is managed from Super Admin only.');const fallback=registered?.email?.toLowerCase()===email.toLowerCase()?registered:DEMO_AGENT;onLogin({...fallback,...authenticated,email})}catch(error){setError(error.message||'Unable to sign in right now.')}finally{setLoading(false)}}
   return <AuthLayout title="Welcome back" text="Sign in to manage your cargo account and active shipments.">
     <div className="mt-7 flex gap-5 border-b border-slate-200"><button onClick={()=>setMethod('password')} className={`border-b-2 pb-3 text-xs font-bold ${method==='password'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Password login</button><button onClick={()=>setMethod('otp')} className={`border-b-2 pb-3 text-xs font-bold ${method==='otp'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Email OTP</button></div>
     <form onSubmit={submit} className="mt-6 space-y-4">
@@ -555,10 +563,10 @@ function Portal({ user, onLogout, toast, onRefreshUser }) {
 }
 
 export default function App() {
-  const [route,setRoute]=useState(currentRoute()),[user,setUser]=useState(()=>JSON.parse(localStorage.getItem('aac_session')||'null')),[toast,setToast]=useState('')
+  const [route,setRoute]=useState(currentRoute()),[user,setUser]=useState(()=>{const session=JSON.parse(localStorage.getItem('aac_session')||'null');if(session?.role==='employee'){localStorage.removeItem('aac_session');return null}return session}),[toast,setToast]=useState('')
   useEffect(()=>{const change=()=>setRoute(currentRoute());window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change)},[])
   useEffect(()=>{if(toast){const timer=setTimeout(()=>setToast(''),4200);return()=>clearTimeout(timer)}},[toast])
-  const refreshUser=async(showToast=false)=>{try{const result=await api.get('/api/auth/me');const next={...user,...result.user};localStorage.setItem('aac_session',JSON.stringify(next));setUser(next);if(showToast)setToast(/pending/i.test(String(next.status||''))?'Approval is still pending.':'Account approved. Booking access is now active.')}catch(error){const legacy=JSON.parse(localStorage.getItem('aac_registered')||'null');if(/pending/i.test(String(user?.status||''))&&legacy?.email&&legacy?.password){try{let recovered;try{recovered=await api.post('/api/auth/login',{email:legacy.email,password:legacy.password,role:'agent'})}catch{recovered=await api.post('/api/auth/register',legacy);recovered={user:recovered.account}}const next={...user,...recovered.user};localStorage.setItem('aac_registered',JSON.stringify(recovered.user));localStorage.setItem('aac_session',JSON.stringify(next));setUser(next);setToast('Pending application synced with Super Admin.')}catch(syncError){if(showToast)setToast(syncError.message||'Could not sync this application.')}}else if(showToast)setToast(error.message||'Could not refresh approval status.')}}
+  const refreshUser=async(showToast=false)=>{try{const result=await api.get('/api/auth/me');if(result.user?.role==='employee'){logout();setToast('Employee access is managed from Super Admin only.');return}const next={...user,...result.user};localStorage.setItem('aac_session',JSON.stringify(next));setUser(next);if(showToast)setToast(/pending/i.test(String(next.status||''))?'Approval is still pending.':'Account approved. Booking access is now active.')}catch(error){const legacy=JSON.parse(localStorage.getItem('aac_registered')||'null');if(/pending/i.test(String(user?.status||''))&&legacy?.email&&legacy?.password){try{let recovered;try{recovered=await api.post('/api/auth/login',{email:legacy.email,password:legacy.password,role:'agent'})}catch{recovered=await api.post('/api/auth/register',legacy);recovered={user:recovered.account}}const next={...user,...recovered.user};localStorage.setItem('aac_registered',JSON.stringify(recovered.user));localStorage.setItem('aac_session',JSON.stringify(next));setUser(next);setToast('Pending application synced with Super Admin.')}catch(syncError){if(showToast)setToast(syncError.message||'Could not sync this application.')}}else if(showToast)setToast(error.message||'Could not refresh approval status.')}}
   useEffect(()=>{if(!user?.email)return;refreshUser();const timer=setInterval(()=>refreshUser(),30000);return()=>clearInterval(timer)},[user?.email])
   const login=account=>{const destination=routeMap[route]?route:'dashboard';localStorage.setItem('aac_session',JSON.stringify(account));setUser(account);setToast('Signed in successfully.');go(destination)}
   const logout=()=>{api.post('/api/auth/logout',{}).catch(()=>{});localStorage.removeItem('aac_session');localStorage.removeItem('aac_wallet');localStorage.removeItem('aac_shipments');setUser(null);go('login')}

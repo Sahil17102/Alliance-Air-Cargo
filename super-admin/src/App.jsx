@@ -16,6 +16,7 @@ import { api } from './lib/api'
 const LANDING_URL = import.meta.env.VITE_LANDING_URL || 'http://127.0.0.1:5173'
 const CLIENT_URL = import.meta.env.VITE_CLIENT_URL || 'http://127.0.0.1:5174'
 const ADMIN_LOGIN = { email:'superadmin@alliancecargo.in', password:'Admin@123', name:'Aarav Sharma', role:'Super Admin' }
+const ADMIN_STATE_CACHE_VERSION = '2026-08-05-admin-refresh'
 
 const seedState = {
   users:[
@@ -141,7 +142,8 @@ const mergeSeedRecords=(seedRows,cachedRows)=>{
 
 try {
   const cachedAdminState=JSON.parse(localStorage.getItem('aac_admin_state')||'null')
-  if(cachedAdminState) localStorage.setItem('aac_admin_state',JSON.stringify({...seedState,...cachedAdminState,flights:mergeSeedRecords(seedState.flights,cachedAdminState.flights),stations:mergeSeedRecords(seedState.stations,cachedAdminState.stations),rates:mergeSeedRecords(seedState.rates,cachedAdminState.rates),charges:cachedAdminState.charges?.length?cachedAdminState.charges:seedState.charges,commodities:mergeSeedRecords(seedState.commodities,cachedAdminState.commodities),settings:{...seedState.settings,...cachedAdminState.settings},chargeControls:{...seedState.chargeControls,...cachedAdminState.chargeControls}}))
+  if(cachedAdminState?.cacheVersion!==ADMIN_STATE_CACHE_VERSION) localStorage.setItem('aac_admin_state',JSON.stringify({...seedState,cacheVersion:ADMIN_STATE_CACHE_VERSION}))
+  else if(cachedAdminState) localStorage.setItem('aac_admin_state',JSON.stringify({...seedState,...cachedAdminState,cacheVersion:ADMIN_STATE_CACHE_VERSION,flights:mergeSeedRecords(seedState.flights,cachedAdminState.flights),stations:mergeSeedRecords(seedState.stations,cachedAdminState.stations),rates:mergeSeedRecords(seedState.rates,cachedAdminState.rates),charges:cachedAdminState.charges?.length?cachedAdminState.charges:seedState.charges,commodities:mergeSeedRecords(seedState.commodities,cachedAdminState.commodities),settings:{...seedState.settings,...cachedAdminState.settings},chargeControls:{...seedState.chargeControls,...cachedAdminState.chargeControls}}))
 } catch {}
 
 const navGroups = [
