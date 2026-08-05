@@ -172,6 +172,7 @@ const topNavigation = [
   ]},
   {key:'people',label:'Users',icon:Users,items:[
     {key:'users',label:'Agent Approvals'},
+    {key:'employees',label:'Employee Access'},
     {key:'createEmployee',label:'Create Employee'},
     {key:'stations',label:'Stations'},
   ]},

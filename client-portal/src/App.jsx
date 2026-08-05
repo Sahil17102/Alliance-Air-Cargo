@@ -148,18 +148,15 @@ function AuthLayout({ children, title, text }) {
 }
 
 function Login({ onLogin, onForgot, onRegister, toast }) {
-  const [accountType,setAccountType]=useState('agent')
   const [method,setMethod]=useState('password')
   const [email,setEmail]=useState(DEMO_AGENT.email)
   const [password,setPassword]=useState(DEMO_AGENT.password)
   const [otpSent,setOtpSent]=useState(false)
   const [otp,setOtp]=useState('')
   const [error,setError]=useState(''),[loading,setLoading]=useState(false)
-  useEffect(()=>{ setEmail(accountType==='agent'?DEMO_AGENT.email:''); setPassword(accountType==='agent'?DEMO_AGENT.password:''); setError(''); setMethod('password') },[accountType])
-  const submit=async e=>{e.preventDefault();setError('');if(method==='otp'&&!otpSent)return setError('Request an OTP first.');setLoading(true);try{const result=await api.post('/api/auth/login',method==='otp'?{email,otp,role:accountType}:{email,password,role:accountType});const registered=JSON.parse(localStorage.getItem('aac_registered')||'null');const fallback=accountType==='employee'?{email,name:'Employee',business:'Client workspace',role:'employee',status:'Active'}:(registered?.email?.toLowerCase()===email.toLowerCase()?registered:DEMO_AGENT);onLogin({...fallback,...result?.user,email})}catch(error){setError(error.message||'Unable to sign in right now.')}finally{setLoading(false)}}
+  const submit=async e=>{e.preventDefault();setError('');if(method==='otp'&&!otpSent)return setError('Request an OTP first.');setLoading(true);try{const result=await api.post('/api/auth/login',method==='otp'?{email,otp,role:'agent'}:{email,password,role:'portal'});const registered=JSON.parse(localStorage.getItem('aac_registered')||'null');const authenticated=result?.user||{};const fallback=authenticated.role==='employee'?{email,name:'Employee',business:'Client workspace',role:'employee',status:'Active'}:(registered?.email?.toLowerCase()===email.toLowerCase()?registered:DEMO_AGENT);onLogin({...fallback,...authenticated,email})}catch(error){setError(error.message||'Unable to sign in right now.')}finally{setLoading(false)}}
   return <AuthLayout title="Welcome back" text="Sign in to manage your cargo account and active shipments.">
-    <div className="mt-7 grid grid-cols-2 rounded-xl bg-slate-100 p-1"><button onClick={()=>setAccountType('agent')} className={`rounded-lg py-2.5 text-xs font-bold ${accountType==='agent'?'bg-white text-brand shadow-sm':'text-slate-500'}`}>Client / Agent</button><button onClick={()=>setAccountType('employee')} className={`rounded-lg py-2.5 text-xs font-bold ${accountType==='employee'?'bg-white text-brand shadow-sm':'text-slate-500'}`}>Employee</button></div>
-    {accountType==='agent'&&<div className="mt-4 flex gap-5 border-b border-slate-200"><button onClick={()=>setMethod('password')} className={`border-b-2 pb-3 text-xs font-bold ${method==='password'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Password login</button><button onClick={()=>setMethod('otp')} className={`border-b-2 pb-3 text-xs font-bold ${method==='otp'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Email OTP</button></div>}
+    <div className="mt-7 flex gap-5 border-b border-slate-200"><button onClick={()=>setMethod('password')} className={`border-b-2 pb-3 text-xs font-bold ${method==='password'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Password login</button><button onClick={()=>setMethod('otp')} className={`border-b-2 pb-3 text-xs font-bold ${method==='otp'?'border-brand text-brand':'border-transparent text-slate-400'}`}>Email OTP</button></div>
     <form onSubmit={submit} className="mt-6 space-y-4">
       <label className="field-label">Registered email<input className="field mt-2" type="email" required value={email} onChange={e=>setEmail(e.target.value)} /></label>
       {method==='password'?<label className="field-label">Password<div className="relative mt-2"><input className="field pr-10" type="password" required value={password} onChange={e=>setPassword(e.target.value)}/><LockKeyhole size={17} className="absolute right-3 top-3.5 text-slate-400"/></div></label>:<><button type="button" onClick={()=>{setOtpSent(true);toast('Demo OTP sent. Use 123456 to continue.')}} className="btn-secondary w-full"><Mail size={17}/>{otpSent?'Resend login OTP':'Send login OTP'}</button>{otpSent&&<label className="field-label">Enter 6-digit OTP<input className="field mt-2 tracking-[.3em]" inputMode="numeric" maxLength="6" value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="123456"/></label>}</>}
@@ -167,8 +164,8 @@ function Login({ onLogin, onForgot, onRegister, toast }) {
       {method==='password'&&<div className="flex items-center justify-between text-xs"><label className="flex items-center gap-2 text-slate-500"><input type="checkbox" className="accent-brand"/> Remember me</label><button type="button" onClick={onForgot} className="font-bold text-brand">Forgot password?</button></div>}
       <button className="btn-primary w-full" disabled={loading}>{loading?<LoaderCircle className="animate-spin" size={16}/>:<>Sign in securely <ArrowRight size={16}/></>}</button>
     </form>
-    {accountType==='agent'?<div className="mt-5 rounded-xl border border-blue-100 bg-sky p-4 text-xs leading-5 text-slate-600"><strong className="text-navy">Demo client access</strong><br/>agent@alliancecargo.in / Cargo@123</div>:<div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800"><strong>Employee credentials required</strong><br/>Only Super Admin can create, activate and manage employee access. No default employee login is available.</div>}
-    {accountType==='agent'&&<p className="mt-6 text-center text-sm text-slate-500">New business? <button onClick={onRegister} className="font-bold text-brand">Register as an agent</button></p>}
+    <div className="mt-5 rounded-xl border border-blue-100 bg-sky p-4 text-xs leading-5 text-slate-600"><strong className="text-navy">Demo client access</strong><br/>agent@alliancecargo.in / Cargo@123</div>
+    <p className="mt-6 text-center text-sm text-slate-500">New business? <button onClick={onRegister} className="font-bold text-brand">Register as an agent</button></p>
   </AuthLayout>
 }
 
