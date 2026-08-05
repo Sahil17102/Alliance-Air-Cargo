@@ -446,7 +446,7 @@ function requireEmployeePermission(permission) {
   return asyncRoute(async (request, response, next) => {
     if (request.user?.role !== 'employee') return next()
     const result = await requireDatabase().query('SELECT owner_email, data FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [String(request.user.sub || '').toLowerCase()])
-    if (!result.rowCount || String(result.rows[0].data?.status || '').toLowerCase() !== 'active') return response.status(403).json({ message: 'Employee access is inactive. Contact your client account owner.' })
+    if (!result.rowCount || String(result.rows[0].data?.status || '').toLowerCase() !== 'active') return response.status(403).json({ message: 'Employee access is inactive. Contact Super Admin.' })
     const permissions = Array.isArray(result.rows[0].data?.permissions) ? result.rows[0].data.permissions : []
     if (!permissions.includes(permission)) return response.status(403).json({ message: `Your employee account does not have ${permission} permission` })
     request.user.ownerEmail = result.rows[0].owner_email
@@ -481,6 +481,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
   const password = String(request.body?.password || '')
   const otp = String(request.body?.otp || '')
   const requestedRole = String(request.body?.role || '').toLowerCase()
+  const portalLogin = requestedRole === 'portal'
   if (!email || (!password && !otp)) return response.status(400).json({ message: 'Email and password or OTP are required' })
 
   let user = demoAccounts.get(email)
@@ -488,14 +489,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
 
   if (!valid && pool) {
     if (databaseStatus !== 'connected') throw Object.assign(new Error('Account database is temporarily unavailable. Please retry shortly.'), { status: 503 })
-    if (requestedRole === 'employee') {
-      const result = await pool.query('SELECT owner_email, data, password_hash FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
-      if (result.rowCount) {
-        const saved = result.rows[0]
-        valid = Boolean(password && saved.password_hash && await bcrypt.compare(password, saved.password_hash) && String(saved.data?.status || '').toLowerCase() === 'active')
-        user = { ...saved.data, email, role: 'employee', ownerEmail: saved.owner_email }
-      }
-    } else {
+    if (requestedRole !== 'employee') {
       const result = await pool.query('SELECT data, password_hash FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
       if (result.rowCount) {
         const saved = result.rows[0]
@@ -503,10 +497,19 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
         user = { ...saved.data, email, role: 'agent' }
       }
     }
+    if (!valid && (requestedRole === 'employee' || portalLogin)) {
+      const result = await pool.query('SELECT owner_email, data, password_hash FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
+      if (result.rowCount) {
+        const saved = result.rows[0]
+        valid = Boolean(password && saved.password_hash && await bcrypt.compare(password, saved.password_hash) && String(saved.data?.status || '').toLowerCase() === 'active')
+        user = { ...saved.data, email, role: 'employee', ownerEmail: saved.owner_email }
+      }
+    }
   }
 
   if (!valid || !user) return response.status(401).json({ message: 'Email, password or OTP is incorrect' })
-  if (requestedRole && requestedRole !== user.role) return response.status(403).json({ message: 'Account role does not match this portal' })
+  if (portalLogin && !['agent', 'employee'].includes(user.role)) return response.status(403).json({ message: 'Account role does not match this portal' })
+  if (requestedRole && !portalLogin && requestedRole !== user.role) return response.status(403).json({ message: 'Account role does not match this portal' })
 
   const safeUser = { ...publicAccount(user), email }
   if (pool && databaseStatus === 'connected' && user.role === 'agent') await ensureWallet(pool, email, safeUser)
@@ -555,39 +558,42 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   response.status(201).json({ account: record, message: 'Registration submitted for Super Admin approval' })
 }))
 
-app.get('/api/client/employees', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
-  const result = await requireDatabase().query('SELECT data FROM client_employees WHERE owner_email = $1 ORDER BY created_at DESC', [String(request.user.sub).toLowerCase()])
+app.get('/api/admin/employees', authenticate, requireRole('superadmin'), asyncRoute(async (_request, response) => {
+  const result = await requireDatabase().query('SELECT data FROM client_employees ORDER BY created_at DESC')
   response.json({ employees: result.rows.map(row => publicAccount(row.data)) })
 }))
 
-app.post('/api/client/employees', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+app.post('/api/admin/employees', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
   const data = cleanObject(request.body)
-  const ownerEmail = String(request.user.sub || '').toLowerCase()
+  const ownerEmail = String(data.ownerEmail || '').trim().toLowerCase()
   const email = String(data.email || '').trim().toLowerCase()
   const password = String(data.password || '')
   const name = String(data.name || '').trim()
   const permissions = normalizeEmployeePermissions(data.permissions)
+  if (!/^\S+@\S+\.\S+$/.test(ownerEmail)) return response.status(400).json({ message: 'Select a valid client / agent owner email' })
   if (!name || !/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({ message: 'Employee name and valid email are required' })
-  if (email === ownerEmail) return response.status(400).json({ message: 'Employee email must be different from the client owner email' })
+  if (email === ownerEmail) return response.status(400).json({ message: 'Employee email must be different from the assigned client email' })
   if (password.length < 8) return response.status(400).json({ message: 'Create an employee password of at least 8 characters' })
   if (!permissions.length) return response.status(400).json({ message: 'Select at least one employee permission' })
   const ownerRegistration = await requireDatabase().query('SELECT data FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [ownerEmail])
-  if (ownerRegistration.rowCount && normalizedAgentStatus(ownerRegistration.rows[0].data?.status) !== 'Active') return response.status(403).json({ message: 'Super Admin approval is required before creating employee access' })
+  const demoOwner = demoAccounts.get(ownerEmail)
+  if (!ownerRegistration.rowCount && demoOwner?.role !== 'agent') return response.status(404).json({ message: 'Assigned client / agent account was not found' })
+  if (ownerRegistration.rowCount && normalizedAgentStatus(ownerRegistration.rows[0].data?.status) !== 'Active') return response.status(403).json({ message: 'Approve the client / agent before creating employee access' })
   const agentConflict = await requireDatabase().query('SELECT 1 FROM agent_registrations WHERE LOWER(email) = $1 LIMIT 1', [email])
   const employeeConflict = await requireDatabase().query('SELECT 1 FROM client_employees WHERE LOWER(email) = $1 LIMIT 1', [email])
   if (agentConflict.rowCount || employeeConflict.rowCount || demoAccounts.has(email)) return response.status(409).json({ message: 'This email already belongs to another portal account' })
   const id = `EMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
   const passwordHash = await bcrypt.hash(password, 12)
-  const record = { id, name, email, phone: String(data.phone || '').trim(), designation: String(data.designation || 'Booking executive').trim(), permissions, status: 'Active', role: 'employee', business: request.user.business || 'Client account', ownerEmail, createdAt: new Date().toISOString() }
+  const ownerBusiness = ownerRegistration.rows[0]?.data?.business || demoOwner?.business || 'Client account'
+  const record = { id, name, email, phone: String(data.phone || '').trim(), designation: String(data.designation || 'Booking executive').trim(), permissions, status: 'Active', role: 'employee', business: ownerBusiness, ownerEmail, createdAt: new Date().toISOString() }
   await requireDatabase().query('INSERT INTO client_employees (id, owner_email, email, password_hash, data) VALUES ($1, $2, $3, $4, $5)', [id, ownerEmail, email, passwordHash, record])
   response.status(201).json({ employee: record, message: 'Employee credentials created' })
 }))
 
-app.patch('/api/client/employees/:id', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
+app.patch('/api/admin/employees/:id', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
   const id = String(request.params.id || '').trim()
-  const ownerEmail = String(request.user.sub || '').toLowerCase()
   const data = cleanObject(request.body)
-  const existing = await requireDatabase().query('SELECT data FROM client_employees WHERE id = $1 AND owner_email = $2 LIMIT 1', [id, ownerEmail])
+  const existing = await requireDatabase().query('SELECT data FROM client_employees WHERE id = $1 LIMIT 1', [id])
   if (!existing.rowCount) return response.status(404).json({ message: 'Employee account not found' })
   const permissions = data.permissions === undefined ? existing.rows[0].data.permissions : normalizeEmployeePermissions(data.permissions)
   if (!permissions.length) return response.status(400).json({ message: 'Select at least one employee permission' })
@@ -597,13 +603,13 @@ app.patch('/api/client/employees/:id', authenticate, requireRole('agent'), async
   const password = String(data.password || '')
   if (password && password.length < 8) return response.status(400).json({ message: 'New employee password must be at least 8 characters' })
   const result = password
-    ? await requireDatabase().query('UPDATE client_employees SET password_hash = $3, data = $4, updated_at = NOW() WHERE id = $1 AND owner_email = $2 RETURNING data', [id, ownerEmail, await bcrypt.hash(password, 12), nextData])
-    : await requireDatabase().query('UPDATE client_employees SET data = $3, updated_at = NOW() WHERE id = $1 AND owner_email = $2 RETURNING data', [id, ownerEmail, nextData])
+    ? await requireDatabase().query('UPDATE client_employees SET password_hash = $2, data = $3, updated_at = NOW() WHERE id = $1 RETURNING data', [id, await bcrypt.hash(password, 12), nextData])
+    : await requireDatabase().query('UPDATE client_employees SET data = $2, updated_at = NOW() WHERE id = $1 RETURNING data', [id, nextData])
   response.json({ employee: publicAccount(result.rows[0].data) })
 }))
 
-app.delete('/api/client/employees/:id', authenticate, requireRole('agent'), asyncRoute(async (request, response) => {
-  const result = await requireDatabase().query('DELETE FROM client_employees WHERE id = $1 AND owner_email = $2 RETURNING id', [String(request.params.id || ''), String(request.user.sub || '').toLowerCase()])
+app.delete('/api/admin/employees/:id', authenticate, requireRole('superadmin'), asyncRoute(async (request, response) => {
+  const result = await requireDatabase().query('DELETE FROM client_employees WHERE id = $1 RETURNING id', [String(request.params.id || '')])
   if (!result.rowCount) return response.status(404).json({ message: 'Employee account not found' })
   response.json({ deleted: result.rows[0].id })
 }))
